@@ -12,9 +12,9 @@ write_chapter() {
         echo "
 [CHAPTER]
 TIMEBASE=1/1000
-START=${start}
-END=${end}
-title=Chapter ${chapter}
+START=${2}
+END=${3}
+title=Chapter ${1}
 "
 }
 
@@ -27,9 +27,12 @@ process_csv() {
 
     while IFS=',' read -ra toks ; do
         chapter="${toks[-1]}"
+        if [ -z "$last_chapter" ]; then
+            last_chapter="$chapter"
+        fi
 
         # write previous chapter if relevant
-        if [ -n "$last_chapter" ] && [ "$last_chapter" != "$chapter" ]; then
+        if [ "$last_chapter" != "$chapter" ]; then
             write_chapter "$last_chapter" "$chapter_start" "$last_start"
             last_chapter="$chapter"
             chapter_start="$last_start"
@@ -43,8 +46,10 @@ process_csv() {
         length="$(dur_to_time "$length")"
 
         # output
-        start="$(echo "$offset * 1000 + $chapter_start" | bc -l)"
+        start="$(echo "$offset * 1000 + $last_start" | bc -l)"
         end="$(echo "$start + $length * 1000" | bc -l)"
+
+        echo "; chapter '$chapter' $start -> $end"
 
         last_start="$end"
         last_chapter="$chapter"

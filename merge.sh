@@ -93,17 +93,21 @@ process_meta() {
 }
 
 while read -r folder; do
-    process_dir "$folder"
+    process_dir "$folder" &
 done < <(find . -mindepth 1 -maxdepth 1 -type d -not -name '.*')
+wait
 
 while read -r lst; do
-    process_lst "$lst"
+    process_lst "$lst" &
 done < <(find . -mindepth 1 -maxdepth 1 -type f -name '*.lst')
+wait
 
 while read -r flac; do
-    process_flac "$flac"
+    process_flac "$flac" &
 done < <(find . -mindepth 1 -maxdepth 1 -type f -name '*.flac')
+wait
 
 while read -r meta; do
-    process_meta "$meta"
+    process_meta "$meta" &
 done < <(find . -mindepth 1 -maxdepth 1 -type f -name '*.mp4')
+wait
