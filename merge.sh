@@ -71,6 +71,7 @@ process_meta() {
 
     cmdline=( )
 
+    # metadata
     if [ -e "$meta_file" ]; then
         cmdline+=( -i "$meta_file" )
     fi
@@ -80,15 +81,20 @@ process_meta() {
     if [ -z "$thumb" ]; then
         echo "No thumbnail for $1" >&2
     else
-        cmdline+=( "-i" "$thumb" )
+        cmdline+=( "-i" "$thumb" -map 0:0 )
+        [ -e "$meta_file" ] && cmdline+=( -map 2:0 )
+        [ -e "$meta_file" ] || cmdline+=( -map 1:0 )
     fi
 
-    ffmpeg "-i" "$1" "${cmdline[@]}" -map_metadata 1 -vn -f mp4 -codec copy "$output_file"
+    ffmpeg "-i" "$1" "${cmdline[@]}" -f mp4 -codec copy \
+        -map_metadata 1 -id3v2_version 3 \
+        -metadata:s:v title="Album cover" -metadata:s:v comment="Cover (front)" \
+        "$output_file"
 }
 
 while read -r folder; do
     process_dir "$folder"
-done < <(find . -mindepth 1 -maxdepth 1 -type d)
+done < <(find . -mindepth 1 -maxdepth 1 -type d -not -name '.*')
 
 while read -r lst; do
     process_lst "$lst"
