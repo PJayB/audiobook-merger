@@ -1,4 +1,9 @@
 #!/bin/bash
+if uname -a | grep -q Msys ; then
+    echo "Run in WSL, silly" >&2
+    exit 1
+fi
+
 dur_to_time() {
     echo "$*" | awk -F ':' '
         $0 ~ "^[0-9+]:[0-9]+:[0-9]+:[0-9.]+$" { printf "%0.2f", $1 * (24 * 60 * 60) + $2 * 3600 + $3 * 60 + $4 }

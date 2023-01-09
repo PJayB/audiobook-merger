@@ -1,4 +1,9 @@
 #!/bin/bash
+if uname -a | grep -q Msys ; then
+    echo "Run in WSL, silly" >&2
+    exit 1
+fi
+
 process_dir() {
     output_file="$1.flac"
     dir_file="$1.lst"
