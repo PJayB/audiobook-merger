@@ -1,9 +1,6 @@
 #!/bin/bash
-if uname -a | grep -q Msys ; then
-    echo "Run in WSL, silly" >&2
-    exit 1
-fi
 
+# todo: parameterize
 input_file_ext="mp3" #flac
 
 create_lst() {
@@ -79,64 +76,6 @@ process_dir() {
     fi
 }
 
-process_lst() {
-    output_file="$(basename "$1" .lst).flac"
-    dir_file="$1"
-    if [ ! -e "$output_file" ]; then
-        ffmpeg -f concat -safe 0 -i "$dir_file" "$output_file" || :
-    fi
-}
-
-process_flac() {
-    out_ext="mp4"
-    codec="mp4"
-
-    base_name="$(basename "$1" ".flac")"
-    output_file="$base_name.$out_ext"
-
-    if [ -e "$output_file" ]; then
-        echo "Skipping $1"
-        return
-    fi
-
-    ffmpeg -i "$1" -strict -2 "-vn" "-f" "$codec" "$output_file" || :
-}
-
-process_meta() {
-    meta_ext="txt"
-    out_ext="m4b"
-    base_name="$(basename "$1" .mp4)"
-    meta_file="$base_name.$meta_ext"
-    output_file="$base_name.$out_ext"
-
-    if [ -e "$output_file" ]; then
-        echo "Skipping $1"
-        return
-    fi
-
-    cmdline=( )
-
-    # metadata
-    if [ -e "$meta_file" ]; then
-        cmdline+=( -i "$meta_file" )
-    fi
-
-    # find thumbnail
-    thumb="$(find "./$base_name/" -iname '*.png' -or -iname '*.jpg' | head -n 1)"
-    if [ -z "$thumb" ]; then
-        echo "No thumbnail for $1" >&2
-    else
-        cmdline+=( "-i" "$thumb" -map 0:0 )
-        [ -e "$meta_file" ] && cmdline+=( -map 2:0 )
-        [ -e "$meta_file" ] || cmdline+=( -map 1:0 )
-    fi
-
-    ffmpeg "-i" "$1" "${cmdline[@]}" -f mp4 -codec copy \
-        -map_metadata 1 -id3v2_version 3 \
-        -metadata:s:v title="Album cover" -metadata:s:v comment="Cover (front)" \
-        "$output_file"
-}
-
 if [ -n "$1" ]; then
     while [ -n "$1" ]; do
         if [ -d "$1" ]; then
@@ -152,18 +91,3 @@ else
     done < <(find . -mindepth 1 -maxdepth 1 -type d -not -name '.*')
 fi
 wait
-
-#while read -r lst; do
-#    process_lst "$lst" &
-#done < <(find . -mindepth 1 -maxdepth 1 -type f -name '*.lst')
-#wait
-#
-#while read -r flac; do
-#    process_flac "$flac" &
-#done < <(find . -mindepth 1 -maxdepth 1 -type f -name '*.flac')
-#wait
-#
-#while read -r meta; do
-#    process_meta "$meta" &
-#done < <(find . -mindepth 1 -maxdepth 1 -type f -name '*.mp4')
-#wait
