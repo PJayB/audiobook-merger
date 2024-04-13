@@ -1,9 +1,4 @@
 #!/bin/bash
-if uname -a | grep -q Msys ; then
-    echo "Run in WSL, silly" >&2
-    exit 1
-fi
-
 dur_to_time() {
     echo "$*" | awk -F ':' '
         $0 ~ "^[0-9+]:[0-9]+:[0-9]+:[0-9.]+$" { printf "%0.2f", $1 * (24 * 60 * 60) + $2 * 3600 + $3 * 60 + $4 }
@@ -82,9 +77,11 @@ process_meta() {
     fi
 }
 
-while read -r meta ; do
-    base_name="$(basename "$meta" .meta)"
+#while read -r meta ; do
+while [ -n "$1" ]; do
+    base_name="$(basename "$1" .meta)"
     csv="$base_name.csv"
-    out_file="$base_name.txt"
-    process_meta "$base_name" "$meta" "$csv" > "$out_file"
-done < <(find . -mindepth 1 -maxdepth 1 -iname '*.meta')
+    out_file="$base_name.timestamps.txt"
+    process_meta "$base_name" "$1" "$csv" > "$out_file"
+    shift
+done

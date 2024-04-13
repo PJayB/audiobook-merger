@@ -1,7 +1,7 @@
 #!/bin/bash
 
 process_meta() {
-    meta_ext="meta"
+    meta_ext=".timestamps.txt"
     out_ext="m4b"
     base_name="$(basename "$1" .mp4)"
     meta_file="$base_name.$meta_ext"
