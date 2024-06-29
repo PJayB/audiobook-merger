@@ -1,20 +1,36 @@
 #!/bin/bash
 
-# todo: parameterize
-input_file_ext="mp3" #flac
+set -e
+
+dur_to_time() {
+    echo "$*" | awk -F ':' '
+        $0 ~ "^[0-9+]:[0-9]+:[0-9]+:[0-9.]+$" { printf "%0.2f", $1 * (24 * 60 * 60) + $2 * 3600 + $3 * 60 + $4 }
+        $0 ~ "^[0-9]+:[0-9]+:[0-9.]+$" { printf "%0.2f", $1 * 3600 + $2 * 60 + $3 }
+        $0 ~ "^[0-9]+:[0-9.]+$" { printf "%0.2f", $1 * 60 + $2 }
+        $0 ~ "^[0-9.]+$" { printf "%0.2f", $1 }
+        '
+}
+
+get_duration() {
+    ffprobe -i "$1" 2>&1 | sed -rn 's/.*Duration: ([0-9:.]+).*/\1/p'
+}
 
 create_lst() {
+    echo "ffconcat version 1.0"
     while read -r file ; do
         echo "$file" | sed "s/'/'\\\\''/g" | awk '{ print "file '"'"'" $0 "'"'"'" }'
+        dur="$(get_duration "$file")"
+        dur="$(dur_to_time "$dur")"
+        echo "duration ${dur}"
     done
 }
 
 create_chaps() {
     echo "file,length,offset,chapter"
     while read -r flac ; do
-        timestr="$(ffprobe -i "$flac" 2>&1 | grep 'Duration:' | awk '{ print $2 $4 }')"
+        timestr="$(get_duration "$flac")"
         chapterguess="$(echo "$flac" | sed -nr 's/.*[Cc]hapter 0*([0-9]+).*/\1/p')"
-        echo '"'"$flac"'"'",$timestr$chapterguess"
+        echo '"'"$flac"'"'";$timestr;0;$chapterguess"
     done
 }
 
@@ -32,7 +48,7 @@ process_file() {
     chaps_file="$input_path.csv"
     meta_file="$input_path.meta"
 
-    if [ ! -f "$1" ]; then
+    if [ ! -e "$1" ]; then
         echo "Not a file: $1" >&2
         return
     fi
@@ -51,43 +67,13 @@ process_file() {
     fi
 }
 
-process_dir() {
-    input_path="$(basename "$1")"
-    dir_file="$input_path.lst"
-    chaps_file="$input_path.csv"
-    meta_file="$input_path.meta"
-
-    if [ ! -d "$1" ]; then
-        echo "Not a folder: $1" >&2
-        return
+while [ -n "$1" ]; do
+    if [ -d "$1" ]; then
+        echo "$1 must be a file" >&2
+        exit 1
+    else
+        process_file "$1" &
     fi
-
-    if [ ! -e "$dir_file" ]; then
-        create_lst < <(find "$1" -iname "*.$input_file_ext") > "$dir_file"
-    fi
-
-    if [ ! -e "$chaps_file" ]; then
-        create_chaps < <(find "$1" -iname "*.$input_file_ext") > "$chaps_file"
-    fi
-
-    if [ ! -e "$meta_file" ]; then
-        ffile="$(find "$1" -iname "*.$input_file_ext" | head -n 1)"
-        create_meta "$ffile" > "$meta_file"
-    fi
-}
-
-if [ -n "$1" ]; then
-    while [ -n "$1" ]; do
-        if [ -d "$1" ]; then
-            process_dir "$1" &
-        else
-            process_file "$1" &
-        fi
-        shift
-    done
-else
-    while read -r folder; do
-        process_dir "$folder" &
-    done < <(find . -mindepth 1 -maxdepth 1 -type d -not -name '.*')
-fi
+    shift
+done
 wait

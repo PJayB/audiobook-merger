@@ -12,7 +12,7 @@ process_merged() {
         return
     fi
 
-    ffmpeg -i "$1" -strict -2 "-vn" "-f" "$codec" "$output_file" || : # todo error handling
+    ffmpeg -i "$1" -threads "$(nproc)" -strict -2 "-vn" "-f" "$codec" "$output_file" || : # todo error handling
 }
 
 while [ -n "$1" ]; do

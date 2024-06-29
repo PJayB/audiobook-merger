@@ -25,7 +25,7 @@ process_csv() {
     last_start=0
     last_chapter=
 
-    while IFS=',' read -ra toks ; do
+    while IFS=';' read -ra toks ; do
         chapter="${toks[-1]}"
         if [ -z "$last_chapter" ]; then
             last_chapter="$chapter"
