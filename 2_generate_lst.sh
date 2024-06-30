@@ -2,17 +2,8 @@
 
 set -e
 
-dur_to_time() {
-    echo "$*" | awk -F ':' '
-        $0 ~ "^[0-9+]:[0-9]+:[0-9]+:[0-9.]+$" { printf "%0.2f", $1 * (24 * 60 * 60) + $2 * 3600 + $3 * 60 + $4 }
-        $0 ~ "^[0-9]+:[0-9]+:[0-9.]+$" { printf "%0.2f", $1 * 3600 + $2 * 60 + $3 }
-        $0 ~ "^[0-9]+:[0-9.]+$" { printf "%0.2f", $1 * 60 + $2 }
-        $0 ~ "^[0-9.]+$" { printf "%0.2f", $1 }
-        '
-}
-
 get_duration() {
-    ffprobe -i "$1" 2>&1 | sed -rn 's/.*Duration: ([0-9:.]+).*/\1/p'
+    ffprobe -i "$1" -show_entries format=duration -v quiet -of csv="p=0"
 }
 
 create_lst() {
@@ -20,7 +11,6 @@ create_lst() {
     while read -r file ; do
         echo "$file" | sed "s/'/'\\\\''/g" | awk '{ print "file '"'"'" $0 "'"'"'" }'
         dur="$(get_duration "$file")"
-        dur="$(dur_to_time "$dur")"
         echo "duration ${dur}"
     done
 }

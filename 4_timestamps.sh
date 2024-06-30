@@ -42,8 +42,8 @@ process_csv() {
         length="${toks[-3]}"
 
         # convert to timestamps
-        offset="$(dur_to_time "$offset")"
-        length="$(dur_to_time "$length")"
+        #offset="$(dur_to_time "$offset")"
+        #length="$(dur_to_time "$length")"
 
         # output
         start="$(echo "$offset * 1000 + $last_start" | bc -l)"
