@@ -44,17 +44,19 @@ process_file() {
     fi
 
     if [ ! -e "$dir_file" ]; then
-        create_lst < <(cat "$1") > "$dir_file"
+        create_lst < <(cat "$1") > "$dir_file" &
     fi
 
     if [ ! -e "$chaps_file" ]; then
-        create_chaps < <(cat "$1") > "$chaps_file"
+        create_chaps < <(cat "$1") > "$chaps_file" &
     fi
 
     if [ ! -e "$meta_file" ]; then
         ffile="$(cat "$1" | head -n 1)"
-        create_meta "$ffile" > "$meta_file"
+        create_meta "$ffile" > "$meta_file" &
     fi
+
+    wait
 }
 
 while [ -n "$1" ]; do

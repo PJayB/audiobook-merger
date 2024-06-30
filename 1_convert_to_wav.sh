@@ -5,9 +5,11 @@ set -e
 
 # Convert to raw
 while read -r file ; do
-    echo "$file"
     bn="$(echo "$file" | sed -r 's/\.[0-9a-zA-Z]+$//g')".wav
-    ffmpeg -y -i "$file" -f wav -ac 2 -ar 44100 -acodec pcm_s16le "$bn" </dev/null >/dev/null 2>&1 &
+    if [ ! -f "$bn" ]; then
+        echo "$file"
+        ffmpeg -y -i "$file" -f wav -ac 2 -ar 44100 -acodec pcm_s16le "$bn" </dev/null >/dev/null 2>&1 &
+    fi
 done < <(find "$1" '(' -iname '*.flac' ')' | sort)
 
 wait
