@@ -103,6 +103,7 @@ def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
                 '-f', 's16le',
                 '-ac', '2',
                 '-ar', '44100',
+                '-v', 'quiet',
                 '-y', '-'
                 ],
                 capture_stdout=True)
@@ -168,7 +169,8 @@ def read_chapters_csv(input_filename):
     return flatten_chapters(chapter_names, chapter_map)
 
 if __name__ == '__main__':
-    input_filename = "Harry Potter and the Philosopher's Stone.csv"
+    # todo: command line arguments
+    input_filename = "HPsmall.csv"
     ffmetadata_filename = 'ffmetadata.txt' # todo: make temporary file and clean up
     merged_filename = 'output.m4b'
 
