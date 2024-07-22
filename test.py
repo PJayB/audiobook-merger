@@ -85,8 +85,9 @@ def write_merged_audio_file(ffconcat_filename, output_filename):
         '-f', 'concat',
         '-safe', '0',
         '-i', ffconcat_filename,
+        '-vn',
+        '-acodec', 'copy',
         '-rf64', 'auto',
-        '-codec', 'mp4',
         '-y', output_filename
     ]
 
@@ -203,9 +204,9 @@ if __name__ == '__main__':
 
     # Write the merged file
     # todo: remove the if !exists check here
-    if not os.path.isfile(merged_filename):
-        #write_merged_audio_file(ffconcat_filename, merged_filename)
-        write_merged_audio_file_old(chapters, merged_filename)
+    #if not os.path.isfile(merged_filename):
+    write_merged_audio_file(ffconcat_filename, merged_filename)
+    #write_merged_audio_file_old(chapters, merged_filename)
 
     # Attach chapter metadata
     audio_file_attach_chapters(merged_filename, ffmetadata_filename, output_filename)
