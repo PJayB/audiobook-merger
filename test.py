@@ -31,45 +31,51 @@ def run_custom(
         raise ffmpeg.Error('ffmpeg', out, err)
     return out, err
 
-def write_chapters_metadata_file(chapters, output_file):
-
+def write_chapters_metadata_file(chapters, output_filename):
     chapter_start = 0
     chapter_end = 0
     bookmarks = []
     num_segments = 0
 
-    for chapter in chapters:
-        for file in chapter['files']:
-            # tot up chapter lengths
-            # Can't use regular ffmpeg.probe here as it doesn't handle
-            # apostrophes properly, and also it's pretty heavyweight anyway
-            duration_str, err = run_custom(['ffprobe',
-                                           '-i', file,
-                                           '-show_entries', 'format=duration',
-                                           '-v', 'quiet',
-                                           '-of', 'csv=p=0'],
-                                           capture_stdout=True)
-            chapter_end += float(duration_str.strip()) * 1000
+    with open(output_filename, 'w') as output_file:
+        output_file.write(';FFMETADATA1\n')
 
-            # accumulate the number of audio segments
-            num_segments += 1
+        for chapter in chapters:
+            output_file.write('\n[CHAPTER]\n')
+            output_file.write('TIMEBASE=1/1000\n')
 
-        # add to chapter metadata
-        bookmarks.append({
-            'name': chapter['name'],
-            'start': chapter_start,
-            'end': chapter_end
-        })
-        chapter_start = chapter_end
+            for file in chapter['files']:
+                # tot up chapter lengths
+                # Can't use regular ffmpeg.probe here as it doesn't handle
+                # apostrophes properly, and also it's pretty heavyweight anyway
+                duration_str, err = run_custom(['ffprobe',
+                                            '-i', file,
+                                            '-show_entries', 'format=duration',
+                                            '-v', 'quiet',
+                                            '-of', 'csv=p=0'],
+                                            capture_stdout=True)
+                chapter_end += float(duration_str.strip()) * 1000
 
-    with open(output_file, 'w') as ffmd:
-        ffmd.write(';FFMETADATA1\n')
-        for bookmark in bookmarks:
-            ffmd.write('\n[CHAPTER]\n')
-            ffmd.write('TIMEBASE=1/1000\n')
-            ffmd.write(f'START={bookmark['start']}\n')
-            ffmd.write(f'END={bookmark['end']}\n')
-            ffmd.write(f'TITLE={bookmark['name']}\n')
+                # accumulate the number of audio segments
+                num_segments += 1
+
+            # add to chapter metadata
+            output_file.write(f'START={chapter_start}\n')
+            output_file.write(f'END={chapter_end}\n')
+            output_file.write(f'TITLE={chapter['name']}\n')
+
+            chapter_start = chapter_end
+
+
+def write_ffconcat_file(chapters, output_filename):
+    # todo
+    # example:
+    #ffconcat version 1.0
+    #file './CD 01/01 Chapter 1 The Boy Who Lived.wav'
+    #duration 64.840000
+    #file './CD 01/02 Chapter 1 The Boy Who Lived.wav'
+    #duration 58.306667
+    pass
 
 
 def write_merged_audio_file(chapters, output_file):
@@ -91,7 +97,8 @@ def write_merged_audio_file(chapters, output_file):
     output = ffmpeg.output(concatenated_input, output_file, format='mp4').overwrite_output()
 
     # todo: if verbose, print this
-    print(output.compile())
+    #args = output.compile()
+    #print(args)
 
     return (output.run())
 
@@ -148,7 +155,7 @@ def read_chapters_csv(input_filename):
     return flatten_chapters(chapter_names, chapter_map)
 
 if __name__ == '__main__':
-    input_filename = "Harry Potter and the Philosopher's Stone.csv"
+    input_filename = "Night Watch.csv" #"Harry Potter and the Philosopher's Stone.csv"
     ffmetadata_filename = 'ffmetadata.txt' # todo: make temporary file and clean up
     merged_filename = 'merged.mp4' # todo: make temporary file and clean up
     output_filename = 'output.m4b'
