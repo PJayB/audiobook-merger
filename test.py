@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import csv
 import subprocess
+from tqdm import tqdm
 
 # todo: find album art from any of the inputs and use that
 # todo: take optional album art from command line
@@ -60,23 +61,6 @@ def write_chapters_metadata_file(chapters, output_filename):
             chapter_start = chapter_end
 
 
-def write_ffconcat_file(chapters, output_filename):
-    # example:
-    #ffconcat version 1.0
-    #file './CD 01/01 Chapter 1 The Boy Who Lived.wav'
-    #duration 64.840000
-    #file './CD 01/02 Chapter 1 The Boy Who Lived.wav'
-    #duration 58.306667
-
-    with open(output_filename, 'w') as output_file:
-        output_file.write('ffconcat version 1.0\n')
-
-        for chapter in chapters:
-            for file, duration in chapter['files']:
-                output_file.write(f"file '{file}'\n")
-                output_file.write(f"duration {duration}\n")
-
-
 # to convert to raw: ffmpeg -f s16le -ac 2 -ar 44100 -i pipe:0 -f mp4 test.mp4
 # to convert from raw: ffmpeg -f s16le -ac 2 -ar 44100 -i pipe:0 -i ffmetadata.txt -f mp4 test.mp4 -map_chapters 1 -y
 def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
@@ -90,26 +74,31 @@ def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
         '-i', ffmetadata_file,
         '-map_chapters', '1',
         '-f', 'mp4',
+        '-v', 'quiet',
         '-y', output_filename
     ])
 
     # Open the input pipe and send each file over for processing
+    files = []
     for chapter in chapters:
         for file, duration in chapter['files']:
-            # convert the file to PCM on-the-fly
-            input_data, _ = run_custom([
-                'ffmpeg',
-                '-i', file,
-                '-f', 's16le',
-                '-ac', '2',
-                '-ar', '44100',
-                '-v', 'quiet',
-                '-y', '-'
-                ],
-                capture_stdout=True)
+            files.append(file)
 
-            # Send the data to the output process
-            output_process.stdin.write(input_data)
+    for file in tqdm(files, desc="Writing"):
+        # convert the file to PCM on-the-fly
+        input_data, _ = run_custom([
+            'ffmpeg',
+            '-i', file,
+            '-f', 's16le',
+            '-ac', '2',
+            '-ar', '44100',
+            '-v', 'quiet',
+            '-y', '-'
+            ],
+            capture_stdout=True)
+
+        # Send the data to the output process
+        output_process.stdin.write(input_data)
 
     # Close the door!
     output_process.stdin.close()
@@ -147,14 +136,19 @@ def read_chapters_csv(input_filename):
         # Add tuple of name and duration
         chapter_map[chap].append((file, float(duration_str.strip())))
 
-    # todo: parse lines
+    # Read the CSV file
+    input_files_and_chapters = []
     with open(input_filename, newline='', encoding='utf-8') as input_file:
         reader = csv.reader(input_file, delimiter=',', quotechar='"')
         for row in reader:
             if len(row) > 1:
-                add_file(row[0], row[1])
+                input_files_and_chapters.append(row)
             elif len(row) > 0:
                 raise ValueError(f"Expected <filename>,<chapter>: '{row}'")
+
+    # Process each file and extract a duration for each one using ffprobe
+    for row in tqdm(input_files_and_chapters, desc='Gathering information'):
+        add_file(row[0], row[1])
 
     # flattens all files in unordered chapters into ordered chapters
     def flatten_chapters(chapter_names, chapter_map):
