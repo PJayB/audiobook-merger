@@ -127,6 +127,9 @@ def read_chapters_csv(input_file):
             chapter_names.append(chap)
             chapter_map[chap] = []
 
+        # resolve the filename
+        file = os.path.abspath(file)
+
         # Probe the file for length
         # Can't use regular ffmpeg.probe here as it doesn't handle
         # apostrophes properly, and also it's pretty heavyweight anyway
@@ -182,12 +185,20 @@ def get_input_output_file():
     if not args.output:
         args.output = f'{Path(args.input_filename).stem}.m4b'
 
+    # Ensure both input and output paths are fully qualified
+    args.input_filename = os.path.abspath(args.input_filename)
+    args.output = os.path.abspath(args.output)
+
     return (args.input_filename, args.output)
 
 
 if __name__ == '__main__':
     # parse command line
     input_filename, merged_filename = get_input_output_file()
+
+    # set the current working directory to the directory of the input file
+    # so that relative paths work correctly
+    os.chdir(os.path.dirname(input_filename))
 
     # Read the chapters
     with open(input_filename, 'r', newline='', encoding='utf-8') as input_file:
