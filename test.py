@@ -2,10 +2,13 @@
 import argparse
 import csv
 import os
+from pathlib import Path
 import subprocess
 import tempfile
 from tqdm import tqdm
 
+# todo: parallelize inputs... is it worth it, or will it just be bottlenecked on output?
+# todo: could we make a tree? A+B -> E, C+D -> F, E+F -> G...? Memory overhead might be tricky though...
 # todo: find album art from any of the inputs and use that
 # todo: take optional album art from command line
 
@@ -173,11 +176,16 @@ def get_input_output_file():
 
     parser.add_argument('input_filename', type=str,
                         help='A CSV file listing <"file","chapter">.')
-    parser.add_argument('merged_filename', type=str,
+    parser.add_argument('-o', '--output', type=str, required=False,
                         help='The output filename.')
 
     args = parser.parse_args()
-    return (args.input_filename, args.merged_filename)
+
+    # Derive a filename if output file is not provided
+    if not args.output:
+        args.output = f'{Path(args.input_filename).stem}.m4b'
+
+    return (args.input_filename, args.output)
 
 
 if __name__ == '__main__':
