@@ -34,7 +34,7 @@ def run_custom(
     out, err = process.communicate(input)
     retcode = process.poll()
     if retcode:
-        raise RuntimeError('ffmpeg', out, err)
+        raise RuntimeError(f'ffmpeg error: {bytes.decode(err)}')
     return out, err
 
 
@@ -77,7 +77,7 @@ def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
         '-i', ffmetadata_file,
         '-map_chapters', '1',
         '-f', 'mp4',
-        '-v', 'quiet',
+        '-v', 'error',
         '-y', output_filename
     ])
 
@@ -97,10 +97,11 @@ def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
                 '-f', 's16le',
                 '-ac', '2',
                 '-ar', '44100',
-                '-v', 'quiet',
+                '-v', 'error',
                 '-y', '-'
                 ],
-                capture_stdout=True)
+                capture_stdout=True,
+                capture_stderr=True)
 
             # Send the data to the output process
             output_process.stdin.write(input_data)
@@ -135,9 +136,10 @@ def read_chapters_csv(input_file):
         duration_str, err = run_custom(['ffprobe',
                                     '-i', file,
                                     '-show_entries', 'format=duration',
-                                    '-v', 'quiet',
+                                    '-v', 'error',
                                     '-of', 'csv=p=0'],
-                                    capture_stdout=True)
+                                    capture_stdout=True,
+                                    capture_stderr=True)
 
         # Add tuple of name and duration
         chapter_map[chap].append((file, float(duration_str.strip())))
