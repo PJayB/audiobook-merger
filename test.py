@@ -12,10 +12,10 @@ from tqdm import tqdm
 # todo: find album art from any of the inputs and use that
 # todo: take optional album art from command line
 
-def run_stream(args, capture_stdout=False, capture_stderr=False, quiet=False):
+def run_stream(args, capture_stdout=True, capture_stderr=True):
     stdin_stream = subprocess.PIPE if input is not None else None
-    stdout_stream = subprocess.PIPE if capture_stdout or quiet else None
-    stderr_stream = subprocess.PIPE if capture_stderr or quiet else None
+    stdout_stream = subprocess.PIPE if capture_stdout else None
+    stderr_stream = subprocess.PIPE if capture_stderr else None
     return subprocess.Popen(
         args, stdin=stdin_stream, stdout=stdout_stream, stderr=stderr_stream
     )
@@ -25,12 +25,11 @@ def run_stream(args, capture_stdout=False, capture_stderr=False, quiet=False):
 #
 def run_custom(
     args,
-    capture_stdout=False,
-    capture_stderr=False,
-    quiet=False,
+    capture_stdout=True,
+    capture_stderr=True,
     input=None
 ):
-    process = run_stream(args, capture_stdout, capture_stderr, quiet)
+    process = run_stream(args, capture_stdout, capture_stderr)
     out, err = process.communicate(input)
     retcode = process.poll()
     if retcode:
@@ -99,9 +98,7 @@ def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
                 '-ar', '44100',
                 '-v', 'error',
                 '-y', '-'
-                ],
-                capture_stdout=True,
-                capture_stderr=True)
+                ])
 
             # Send the data to the output process
             output_process.stdin.write(input_data)
@@ -137,9 +134,7 @@ def read_chapters_csv(input_file):
                                     '-i', file,
                                     '-show_entries', 'format=duration',
                                     '-v', 'error',
-                                    '-of', 'csv=p=0'],
-                                    capture_stdout=True,
-                                    capture_stderr=True)
+                                    '-of', 'csv=p=0'])
 
         # Add tuple of name and duration
         chapter_map[chap].append((file, float(duration_str.strip())))
