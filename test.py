@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import argparse
 import csv
 import os
 import subprocess
@@ -166,10 +167,22 @@ def read_chapters_csv(input_file):
 
     return flatten_chapters(chapter_names, chapter_map)
 
+
+def get_input_output_file():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('input_filename', type=str,
+                        help='A CSV file listing <"file","chapter">.')
+    parser.add_argument('merged_filename', type=str,
+                        help='The output filename.')
+
+    args = parser.parse_args()
+    return (args.input_filename, args.merged_filename)
+
+
 if __name__ == '__main__':
-    # todo: command line arguments
-    input_filename = "NightWatchSmall.csv"
-    merged_filename = 'output.m4b'
+    # parse command line
+    input_filename, merged_filename = get_input_output_file()
 
     # Read the chapters
     with open(input_filename, 'r', newline='', encoding='utf-8') as input_file:
