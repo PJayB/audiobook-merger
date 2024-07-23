@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 import csv
+import os
 import subprocess
+import tempfile
 from tqdm import tqdm
 
 # todo: find album art from any of the inputs and use that
@@ -33,32 +35,30 @@ def run_custom(
     return out, err
 
 
-def write_chapters_metadata_file(chapters, output_filename):
+def write_chapters_metadata_file(chapters, output_file):
     chapter_start = 0
     chapter_end = 0
-    bookmarks = []
     num_segments = 0
 
-    with open(output_filename, 'w') as output_file:
-        output_file.write(';FFMETADATA1\n')
+    output_file.write(';FFMETADATA1\n')
 
-        for chapter in chapters:
-            output_file.write('\n[CHAPTER]\n')
-            output_file.write('TIMEBASE=1/1000\n')
+    for chapter in chapters:
+        output_file.write('\n[CHAPTER]\n')
+        output_file.write('TIMEBASE=1/1000\n')
 
-            for (file, duration) in chapter['files']:
-                # tot up chapter lengths
-                chapter_end += duration * 1000
+        for (file, duration) in chapter['files']:
+            # tot up chapter lengths
+            chapter_end += duration * 1000
 
-                # accumulate the number of audio segments
-                num_segments += 1
+            # accumulate the number of audio segments
+            num_segments += 1
 
-            # add to chapter metadata
-            output_file.write(f'START={chapter_start}\n')
-            output_file.write(f'END={chapter_end}\n')
-            output_file.write(f'TITLE={chapter['name']}\n')
+        # add to chapter metadata
+        output_file.write(f'START={chapter_start}\n')
+        output_file.write(f'END={chapter_end}\n')
+        output_file.write(f'TITLE={chapter["name"]}\n')
 
-            chapter_start = chapter_end
+        chapter_start = chapter_end
 
 
 # to convert to raw: ffmpeg -f s16le -ac 2 -ar 44100 -i pipe:0 -f mp4 test.mp4
@@ -112,7 +112,7 @@ def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
         raise RuntimeError('ffmpeg') # todo: error handling
 
 
-def read_chapters_csv(input_filename):
+def read_chapters_csv(input_file):
     # ordered chapter names
     chapter_names = []
     # map of file lists for each chapter
@@ -138,13 +138,12 @@ def read_chapters_csv(input_filename):
 
     # Read the CSV file
     input_files_and_chapters = []
-    with open(input_filename, newline='', encoding='utf-8') as input_file:
-        reader = csv.reader(input_file, delimiter=',', quotechar='"')
-        for row in reader:
-            if len(row) > 1:
-                input_files_and_chapters.append(row)
-            elif len(row) > 0:
-                raise ValueError(f"Expected <filename>,<chapter>: '{row}'")
+    reader = csv.reader(input_file, delimiter=',', quotechar='"')
+    for row in reader:
+        if len(row) > 1:
+            input_files_and_chapters.append(row)
+        elif len(row) > 0:
+            raise ValueError(f"Expected <filename>,<chapter>: '{row}'")
 
     # Process each file and extract a duration for each one using ffprobe
     for row in tqdm(input_files_and_chapters, desc='Gathering information'):
@@ -164,19 +163,20 @@ def read_chapters_csv(input_filename):
 
 if __name__ == '__main__':
     # todo: command line arguments
-    input_filename = "HPsmall.csv"
-    ffmetadata_filename = 'ffmetadata.txt' # todo: make temporary file and clean up
+    input_filename = "NightWatchSmall.csv"
     merged_filename = 'output.m4b'
 
     # Read the chapters
-    chapters = read_chapters_csv(input_filename)
+    with open(input_filename, 'r', newline='', encoding='utf-8') as input_file:
+        chapters = read_chapters_csv(input_file)
 
     # Write the metadata file with the chapters and stuff
-    # todo: attempt to stream this via stdin too, maybe? Depends how fancy
-    # we can get with input pipes...
-    write_chapters_metadata_file(chapters, ffmetadata_filename)
+    fd, ffmetadata_filename = tempfile.mkstemp()
+    try:
+        with os.fdopen(fd, 'w') as ffmetadata_file:
+            write_chapters_metadata_file(chapters, ffmetadata_file)
 
-    # Write the merged file
-    # todo: remove the if !exists check here
-    #if not os.path.isfile(merged_filename):
-    write_merged_audio_file(chapters, ffmetadata_filename, merged_filename)
+        # Write the merged file
+        write_merged_audio_file(chapters, ffmetadata_filename, merged_filename)
+    finally:
+        os.remove(ffmetadata_filename)
