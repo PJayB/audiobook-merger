@@ -7,7 +7,6 @@ from tqdm import tqdm
 
 # todo: find album art from any of the inputs and use that
 # todo: take optional album art from command line
-# todo: derive chapter markers, make timestamps meta file, use it
 
 def run_stream(args, capture_stdout=False, capture_stderr=False, quiet=False):
     stdin_stream = subprocess.PIPE if input is not None else None
@@ -84,21 +83,24 @@ def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
         for file, duration in chapter['files']:
             files.append(file)
 
-    for file in tqdm(files, desc="Writing"):
-        # convert the file to PCM on-the-fly
-        input_data, _ = run_custom([
-            'ffmpeg',
-            '-i', file,
-            '-f', 's16le',
-            '-ac', '2',
-            '-ar', '44100',
-            '-v', 'quiet',
-            '-y', '-'
-            ],
-            capture_stdout=True)
+    with tqdm(total=len(files)) as pbar:
+        for file in files:
+            pbar.set_description(f'Writing {file}')
+            # convert the file to PCM on-the-fly
+            input_data, _ = run_custom([
+                'ffmpeg',
+                '-i', file,
+                '-f', 's16le',
+                '-ac', '2',
+                '-ar', '44100',
+                '-v', 'quiet',
+                '-y', '-'
+                ],
+                capture_stdout=True)
 
-        # Send the data to the output process
-        output_process.stdin.write(input_data)
+            # Send the data to the output process
+            output_process.stdin.write(input_data)
+            pbar.update(1)
 
     # Close the door!
     output_process.stdin.close()
@@ -146,8 +148,11 @@ def read_chapters_csv(input_file):
             raise ValueError(f"Expected <filename>,<chapter>: '{row}'")
 
     # Process each file and extract a duration for each one using ffprobe
-    for row in tqdm(input_files_and_chapters, desc='Gathering information'):
-        add_file(row[0], row[1])
+    with tqdm(total=len(input_files_and_chapters)) as pbar:
+        for row in input_files_and_chapters:
+            pbar.set_description(f'Analyzing {row[0]}')
+            add_file(row[0], row[1])
+            pbar.update(1)
 
     # flattens all files in unordered chapters into ordered chapters
     def flatten_chapters(chapter_names, chapter_map):
