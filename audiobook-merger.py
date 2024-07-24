@@ -3,14 +3,16 @@ import argparse
 import csv
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 from tqdm import tqdm
 
-# todo: parallelize inputs... is it worth it, or will it just be bottlenecked on output?
-# todo: could we make a tree? A+B -> E, C+D -> F, E+F -> G...? Memory overhead might be tricky though...
-# todo: find album art from any of the inputs and use that
-# todo: take optional album art from command line
+# todo: update an existing file with new metadata
+# todo: switch from csv to some kind of manifest file
+# todo: override metadata: artist, title, year, etc. in manifest
+# todo: add optional album art in manifest
+# todo: iff. all inputs have chapters, use those instead
 
 def run_stream(args, capture_stdout=True, capture_stderr=True):
     stdin_stream = subprocess.PIPE if input is not None else None
@@ -65,7 +67,7 @@ def write_chapters_metadata_file(chapters, output_file):
 
 # to convert to raw: ffmpeg -f s16le -ac 2 -ar 44100 -i pipe:0 -f mp4 test.mp4
 # to convert from raw: ffmpeg -f s16le -ac 2 -ar 44100 -i pipe:0 -i ffmetadata.txt -f mp4 test.mp4 -map_chapters 1 -y
-def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
+def write_merged_audio_file(chapters, ffmetadata_filename, output_filename):
     # This is the output process. We'll stream data to this via its stdin.
     output_process = run_stream([
         'ffmpeg',
@@ -73,7 +75,7 @@ def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
         '-ac', '2',
         '-ar', '44100',
         '-i', 'pipe:0',
-        '-i', ffmetadata_file,
+        '-i', ffmetadata_filename,
         '-map_chapters', '1',
         '-f', 'mp4',
         '-v', 'error',
@@ -114,6 +116,33 @@ def write_merged_audio_file(chapters, ffmetadata_file, output_filename):
     retcode = output_process.poll()
     if retcode:
         raise RuntimeError('ffmpeg') # todo: error handling
+
+
+def update_audio_file(ffmetadata_filename, output_filename):
+    # create a temporary file that we'll use to overwrite the original
+    _, temp_filename = tempfile.mkstemp(
+        prefix=Path(output_filename).stem,
+        suffix=Path(output_filename).suffix)
+    try:
+        # annotate the original with the "copy" codec
+        run_custom([
+            'ffmpeg',
+            '-i', output_filename,
+            '-i', ffmetadata_filename,
+            '-map_chapters', '1',
+            '-codec', 'copy',
+            '-v', 'error',
+            '-y', temp_filename
+            ],
+            capture_stdout=False)
+
+        # move the file over the original
+        shutil.move(temp_filename, output_filename)
+    except Exception as e:
+        # Something went wrong, so delete the temporary file
+        os.remove(temp_filename)
+        # Rethrow the exception
+        raise e
 
 
 def read_chapters_csv(input_file):
@@ -178,6 +207,8 @@ def get_input_output_file():
                         help='A CSV file listing <"file","chapter">.')
     parser.add_argument('-o', '--output', type=str, required=False,
                         help='The output filename.')
+    parser.add_argument('-u', '--update', action='store_true',
+                        help="Update metadata only; don't process audio data.")
 
     args = parser.parse_args()
 
@@ -189,12 +220,12 @@ def get_input_output_file():
     args.input_filename = os.path.abspath(args.input_filename)
     args.output = os.path.abspath(args.output)
 
-    return (args.input_filename, args.output)
+    return (args.input_filename, args.output, args.update)
 
 
 if __name__ == '__main__':
     # parse command line
-    input_filename, merged_filename = get_input_output_file()
+    input_filename, merged_filename, update_only = get_input_output_file()
 
     # set the current working directory to the directory of the input file
     # so that relative paths work correctly
@@ -211,6 +242,14 @@ if __name__ == '__main__':
             write_chapters_metadata_file(chapters, ffmetadata_file)
 
         # Write the merged file
-        write_merged_audio_file(chapters, ffmetadata_filename, merged_filename)
+        if update_only and os.path.isfile(merged_filename):
+            update_audio_file(
+                ffmetadata_filename,
+                merged_filename)
+        else:
+            write_merged_audio_file(
+                chapters,
+                ffmetadata_filename,
+                merged_filename)
     finally:
         os.remove(ffmetadata_filename)
