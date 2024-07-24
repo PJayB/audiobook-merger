@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 import argparse
-import csv
 import os
 from pathlib import Path
 import shutil
@@ -57,10 +56,10 @@ class Manifest:
     def __init__(self, file_name, default_metadata):
         self._key_value_pairs = default_metadata
         self._album_cover = None
+        self._files = []
         self._chapters = []
         self._parse_file_name = file_name
         self._parse_line_number = 0
-        self._file_count = 0
 
         # todo: read the file
         with open(file_name, 'r', encoding='utf-8') as input_file:
@@ -80,14 +79,11 @@ class Manifest:
 
     # Returns a flat list of all files
     def get_files(self):
-        files = []
-        for chapter in self._chapters:
-            files += chapter['files']
-        return files
+        return self._files
 
     # Returns the number of files in the book
     def get_file_count(self):
-        return self._file_count
+        return len(self._files)
 
     #
     # Parsing functions
@@ -173,7 +169,52 @@ class Manifest:
         # accumulate a list of files
         while line := self._parse_get_line(file):
             files.append(line)
-            self._file_count += 1
+            self._files.append(line)
+
+
+def get_file_metadata(file_name):
+    input_data, _ = run_custom([
+        'ffmpeg',
+        '-i', file_name,
+        '-f', 'ffmetadata',
+        '-v', 'error',
+        '-y', '-'
+        ])
+
+    metadata = {}
+
+    lines = input_data.decode("utf-8").split('\n')
+
+    if len(lines) == 0:
+        return metadata
+
+    if lines[0] != ';FFMETADATA1':
+        raise RuntimeError(f'Unknown metadata format: "{lines[0]}"')
+
+    # Convert to key value pairs
+    for line in lines[1:]:
+        key, value = [x.strip() for x in line.partition('=')[::2]]
+        metadata[key] = value
+
+    return metadata
+
+
+def _copy_metadata(metadata, overrides):
+    for key, value in overrides.items():
+        if not key:
+            continue
+        if value == None: # this is a delete
+            if key in metadata:
+                del metadata[key]
+        else:
+            metadata[key] = value
+
+
+def merge_metadata(base, overrides):
+    metadata = {}
+    _copy_metadata(metadata, base)
+    _copy_metadata(metadata, overrides)
+    return metadata
 
 
 def write_metadata_file(
@@ -339,8 +380,10 @@ def get_input_output_file():
     parser.add_argument('-u', '--update', action='store_true',
                         dest='update_only',
                         help="Update metadata only; don't process audio data.")
-    parser.add_argument('-n', '--no-default-meta', action='store_true',
+    parser.add_argument('--no-default-meta', action='store_true',
                         help="*Don't* overwrite metadata with some built-in defaults.")
+    parser.add_argument('--no-inherit-meta', action='store_true',
+                        help="*Don't* inherit metadata from the first input file.")
     parser.add_argument('-r', '--root', type=str, dest='root_dir',
                         help="The base directory to work from.")
 
@@ -370,12 +413,29 @@ if __name__ == '__main__':
     os.chdir(args.root_dir)
 
     # Read the manifest
+    title = Path(args.input_filename).stem
     default_metadata = {} if args.no_default_meta else {
         'genre': 'Audiobook',
-        'track': '',
-        'title': Path(args.input_filename).stem
+        'title': title,
+        'album': title,
+        # delete some entries:
+        'track': None,
+        'TLEN': None,
+        'iTunPGAP': None,
+        'iTunNORM': None,
+        'TIT1': None,
     }
     manifest = Manifest(args.input_filename, default_metadata)
+
+    if manifest.get_file_count() == 0:
+        # todo: error
+        quit(1) # nothing to do
+
+    # get metadata from the first file
+    metadata = merge_metadata(
+        get_file_metadata(manifest.get_files()[0]) if not args.no_inherit_meta else {},
+        manifest.get_metadata_kvps()
+    )
 
     # get chapter metadata from the input files
     chapters = get_chapter_metadata(manifest.get_chapters_and_files())
