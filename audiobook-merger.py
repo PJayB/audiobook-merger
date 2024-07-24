@@ -152,7 +152,7 @@ class Manifest:
     def _parse_metadata(self, file):
         while line := self._parse_get_line(file):
             # get the key value pair
-            key, value = [x.strip() for x in line.partition(':')[::2]]
+            key, value = [x.strip() for x in line.partition('=')[::2]]
             if not key:
                 self._parse_exception('Expected: metadata key')
 
@@ -176,12 +176,19 @@ class Manifest:
             self._file_count += 1
 
 
-def write_chapters_metadata_file(chapters, output_file):
+def write_metadata_file(
+    metadata,
+    chapters,
+    output_file
+):
     chapter_start = 0
     chapter_end = 0
     num_segments = 0
 
     output_file.write(';FFMETADATA1\n')
+
+    for key, value in metadata.items():
+        output_file.write(f'{key}={value}\n')
 
     for chapter in chapters:
         output_file.write('\n[CHAPTER]\n')
@@ -202,8 +209,6 @@ def write_chapters_metadata_file(chapters, output_file):
         chapter_start = chapter_end
 
 
-# to convert to raw: ffmpeg -f s16le -ac 2 -ar 44100 -i pipe:0 -f mp4 test.mp4
-# to convert from raw: ffmpeg -f s16le -ac 2 -ar 44100 -i pipe:0 -i ffmetadata.txt -f mp4 test.mp4 -map_chapters 1 -y
 def write_merged_audio_file(chapters, ffmetadata_filename, output_filename):
     # This is the output process. We'll stream data to this via its stdin.
     output_process = run_stream([
@@ -213,7 +218,7 @@ def write_merged_audio_file(chapters, ffmetadata_filename, output_filename):
         '-ar', '44100',
         '-i', 'pipe:0',
         '-i', ffmetadata_filename,
-        '-map_chapters', '1',
+        '-map_metadata', '1',
         '-f', 'mp4',
         '-v', 'error',
         '-y', output_filename
@@ -269,7 +274,7 @@ def update_audio_file(ffmetadata_filename, output_filename):
             'ffmpeg',
             '-i', output_filename,
             '-i', ffmetadata_filename,
-            '-map_chapters', '1',
+            '-map_metadata', '1',
             '-codec', 'copy',
             '-v', 'error',
             '-y', temp_filename
@@ -367,7 +372,7 @@ if __name__ == '__main__':
     # Read the manifest
     default_metadata = {} if args.no_default_meta else {
         'genre': 'Audiobook',
-        'track': '1',
+        'track': '',
         'title': Path(args.input_filename).stem
     }
     manifest = Manifest(args.input_filename, default_metadata)
@@ -379,7 +384,10 @@ if __name__ == '__main__':
     fd, ffmetadata_filename = tempfile.mkstemp()
     try:
         with os.fdopen(fd, 'w') as ffmetadata_file:
-            write_chapters_metadata_file(chapters, ffmetadata_file)
+            write_metadata_file(
+                manifest.get_metadata_kvps(),
+                chapters,
+                ffmetadata_file)
 
         # Write the merged file
         if args.update_only and os.path.isfile(args.output_filename):
