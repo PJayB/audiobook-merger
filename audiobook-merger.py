@@ -7,6 +7,8 @@ import subprocess
 import tempfile
 from tqdm import tqdm
 
+# todo: a manifest generation tool that dumps a template manifest
+# todo: chapter regex option that pulls from filenames and/or track names
 # todo: specify cwd on command line
 # todo: switch from csv to some kind of manifest file
 # todo: override metadata: artist, title, year, etc. in manifest
