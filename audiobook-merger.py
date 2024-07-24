@@ -250,7 +250,7 @@ def write_metadata_file(
         chapter_start = chapter_end
 
 
-def write_merged_audio_file(chapters, ffmetadata_filename, output_filename):
+def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, output_filename):
     # This is the output process. We'll stream data to this via its stdin.
     output_process = run_stream([
         'ffmpeg',
@@ -301,7 +301,7 @@ def write_merged_audio_file(chapters, ffmetadata_filename, output_filename):
         raise RuntimeError('ffmpeg') # todo: error handling
 
 
-def update_audio_file(ffmetadata_filename, output_filename):
+def update_audio_file(ffmetadata_filename, album_art_filename, output_filename):
     path_parts = Path(output_filename)
 
     # create a temporary file that we'll use to overwrite the original
@@ -452,15 +452,20 @@ if __name__ == '__main__':
                 chapters,
                 ffmetadata_file)
 
+        # todo: split the merge and metadata steps, always write to the temporary
+        # file, and always update metadata after; streamline codepaths
+
         # Write the merged file
         if args.update_only and os.path.isfile(args.output_filename):
             update_audio_file(
                 ffmetadata_filename,
+                manifest.get_album_art(),
                 args.output_filename)
         else:
             write_merged_audio_file(
                 chapters,
                 ffmetadata_filename,
+                manifest.get_album_art(),
                 args.output_filename)
     finally:
         os.remove(ffmetadata_filename)
