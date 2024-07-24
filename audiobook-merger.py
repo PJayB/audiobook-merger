@@ -53,8 +53,8 @@ class ParseException(Exception):
         return(f'{self.file_name}({self.line}): {self.message}')
 
 class Manifest:
-    def __init__(self, file_name, default_metadata):
-        self._key_value_pairs = default_metadata
+    def __init__(self, file_name):
+        self._key_value_pairs = {}
         self._album_cover = None
         self._files = []
         self._chapters = []
@@ -210,10 +210,10 @@ def _copy_metadata(metadata, overrides):
             metadata[key] = value
 
 
-def merge_metadata(base, overrides):
+def merge_metadata(*overrides):
     metadata = {}
-    _copy_metadata(metadata, base)
-    _copy_metadata(metadata, overrides)
+    for i in overrides:
+        _copy_metadata(metadata, i)
     return metadata
 
 
@@ -413,27 +413,30 @@ if __name__ == '__main__':
     os.chdir(args.root_dir)
 
     # Read the manifest
+    manifest = Manifest(args.input_filename)
+    if manifest.get_file_count() == 0:
+        # todo: error
+        quit(1) # nothing to do
+
+    # get metadata from the first file and merge it into all the rest
     title = Path(args.input_filename).stem
-    default_metadata = {} if args.no_default_meta else {
+    default_metadata = {
         'genre': 'Audiobook',
         'title': title,
         'album': title,
-        # delete some entries:
+    }
+    # delete some entries:
+    cleanup_metadata = {
         'track': None,
         'TLEN': None,
         'iTunPGAP': None,
         'iTunNORM': None,
         'TIT1': None,
     }
-    manifest = Manifest(args.input_filename, default_metadata)
-
-    if manifest.get_file_count() == 0:
-        # todo: error
-        quit(1) # nothing to do
-
-    # get metadata from the first file
     metadata = merge_metadata(
         get_file_metadata(manifest.get_files()[0]) if not args.no_inherit_meta else {},
+        cleanup_metadata,
+        default_metadata if not args.no_default_meta else {},
         manifest.get_metadata_kvps()
     )
 
