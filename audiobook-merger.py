@@ -318,6 +318,8 @@ def get_chapter_metadata(input_chapters):
 
                 pbar.update(1)
 
+            chapters.append(c)
+
     return chapters
 
 
@@ -372,11 +374,6 @@ if __name__ == '__main__':
 
     # get chapter metadata from the input files
     chapters = get_chapter_metadata(manifest.get_chapters_and_files())
-
-
-
-
-    quit() # todo
 
     # Write the metadata file with the chapters and stuff
     fd, ffmetadata_filename = tempfile.mkstemp()
