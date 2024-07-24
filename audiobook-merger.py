@@ -119,10 +119,13 @@ def write_merged_audio_file(chapters, ffmetadata_filename, output_filename):
 
 
 def update_audio_file(ffmetadata_filename, output_filename):
+    path_parts = Path(output_filename)
+
     # create a temporary file that we'll use to overwrite the original
     _, temp_filename = tempfile.mkstemp(
-        prefix=Path(output_filename).stem,
-        suffix=Path(output_filename).suffix)
+        dir=path_parts.parent,
+        prefix=path_parts.stem,
+        suffix=path_parts.suffix)
     try:
         # annotate the original with the "copy" codec
         run_custom([
