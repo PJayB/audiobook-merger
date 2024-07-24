@@ -60,6 +60,7 @@ class Manifest:
         self._chapters = []
         self._parse_file_name = file_name
         self._parse_line_number = 0
+        self._file_count = 0
 
         # todo: read the file
         with open(file_name, 'r', encoding='utf-8') as input_file:
@@ -83,6 +84,10 @@ class Manifest:
         for chapter in self._chapters:
             files += chapter['files']
         return files
+
+    # Returns the number of files in the book
+    def get_file_count(self):
+        return self._file_count
 
     #
     # Parsing functions
@@ -168,6 +173,7 @@ class Manifest:
         # accumulate a list of files
         while line := self._parse_get_line(file):
             files.append(line)
+            self._file_count += 1
 
 
 def write_chapters_metadata_file(chapters, output_file):
@@ -279,59 +285,40 @@ def update_audio_file(ffmetadata_filename, output_filename):
         raise e
 
 
-def read_chapters_csv(input_file):
-    # ordered chapter names
-    chapter_names = []
-    # map of file lists for each chapter
-    chapter_map = {}
+def get_chapter_metadata(input_chapters):
+    chapters = []
 
-    def add_file(file, chap):
-        if not chap in chapter_map:
-            chapter_names.append(chap)
-            chapter_map[chap] = []
+    # quickly tally the number of files
+    file_count = 0
+    for input_chapter in input_chapters:
+        file_count += len(input_chapter['files'])
 
-        # resolve the filename
-        file = os.path.abspath(file)
+    with tqdm(total=file_count) as pbar:
+        for input_chapter in input_chapters:
+            files = []
+            c = {
+                'name': input_chapter['name'],
+                'files': files
+            }
+            for file in input_chapter['files']:
+                pbar.set_description(f'Analyzing {file}')
 
-        # Probe the file for length
-        # Can't use regular ffmpeg.probe here as it doesn't handle
-        # apostrophes properly, and also it's pretty heavyweight anyway
-        duration_str, err = run_custom(['ffprobe',
-                                    '-i', file,
-                                    '-show_entries', 'format=duration',
-                                    '-v', 'error',
-                                    '-of', 'csv=p=0'])
+                # resolve the filename
+                file = os.path.abspath(file)
 
-        # Add tuple of name and duration
-        chapter_map[chap].append((file, float(duration_str.strip())))
+                # Probe the file for length
+                duration_str, err = run_custom(['ffprobe',
+                                            '-i', file,
+                                            '-show_entries', 'format=duration',
+                                            '-v', 'error',
+                                            '-of', 'csv=p=0'])
 
-    # Read the CSV file
-    input_files_and_chapters = []
-    reader = csv.reader(input_file, delimiter=',', quotechar='"')
-    for row in reader:
-        if len(row) > 1:
-            input_files_and_chapters.append(row)
-        elif len(row) > 0:
-            raise ValueError(f"Expected <filename>,<chapter>: '{row}'")
+                # Add tuple of name and duration
+                files.append((file, float(duration_str.strip())))
 
-    # Process each file and extract a duration for each one using ffprobe
-    with tqdm(total=len(input_files_and_chapters)) as pbar:
-        for row in input_files_and_chapters:
-            pbar.set_description(f'Analyzing {row[0]}')
-            add_file(row[0], row[1])
-            pbar.update(1)
+                pbar.update(1)
 
-    # flattens all files in unordered chapters into ordered chapters
-    def flatten_chapters(chapter_names, chapter_map):
-        sorted_chapters = []
-        for name in chapter_names:
-            sorted_chapters.append({
-                'name': name,
-                'files': chapter_map[name]
-                })
-        return sorted_chapters
-
-    return flatten_chapters(chapter_names, chapter_map)
+    return chapters
 
 
 def get_input_output_file():
@@ -377,9 +364,12 @@ if __name__ == '__main__':
     }
     manifest = Manifest(args.input_filename, default_metadata)
 
-    # todo: need to go get chapter metadata from the input files
+    # get chapter metadata from the input files
+    chapters = get_chapter_metadata(manifest.get_chapters_and_files())
 
-    chapters = [] # todo
+
+
+    
     quit() # todo
 
     # Write the metadata file with the chapters and stuff
