@@ -444,6 +444,8 @@ if __name__ == '__main__':
     chapters = get_chapter_metadata(manifest.get_chapters_and_files())
 
     # Write the metadata file with the chapters and stuff
+    # todo: also use the same drive and folder as the original for this too
+    # todo: make temporary filename for merged file
     fd, ffmetadata_filename = tempfile.mkstemp()
     try:
         with os.fdopen(fd, 'w') as ffmetadata_file:
