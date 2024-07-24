@@ -9,10 +9,7 @@ from tqdm import tqdm
 
 # todo: a manifest generation tool that dumps a template manifest
 # todo: chapter regex option that pulls from filenames and/or track names
-# todo: specify cwd on command line
-# todo: switch from csv to some kind of manifest file
-# todo: override metadata: artist, title, year, etc. in manifest
-# todo: add optional album art in manifest
+# todo: album art
 # todo: iff. all inputs have chapters, use those instead
 
 def run_stream(args, capture_stdout=True, capture_stderr=True):
