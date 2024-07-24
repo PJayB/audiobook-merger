@@ -334,6 +334,8 @@ def get_input_output_file():
                         help="Update metadata only; don't process audio data.")
     parser.add_argument('-n', '--no-default-meta', action='store_true',
                         help="*Don't* overwrite metadata with some built-in defaults.")
+    parser.add_argument('-r', '--root', type=str, dest='root_dir',
+                        help="The base directory to work from.")
 
     args = parser.parse_args()
 
@@ -345,6 +347,10 @@ def get_input_output_file():
     args.input_filename = os.path.abspath(args.input_filename)
     args.output_filename = os.path.abspath(args.output_filename)
 
+    # Derive the root if not provided
+    if not args.root_dir:
+        args.root_dir = os.path.dirname(args.input_filename)
+
     return args
 
 
@@ -354,7 +360,7 @@ if __name__ == '__main__':
 
     # set the current working directory to the directory of the input file
     # so that relative paths work correctly
-    os.chdir(os.path.dirname(args.input_filename))
+    os.chdir(args.root_dir)
 
     # Read the manifest
     default_metadata = {} if args.no_default_meta else {
@@ -369,7 +375,7 @@ if __name__ == '__main__':
 
 
 
-    
+
     quit() # todo
 
     # Write the metadata file with the chapters and stuff
