@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 from tqdm import tqdm
 
-# todo: update an existing file with new metadata
+# todo: specify cwd on command line
 # todo: switch from csv to some kind of manifest file
 # todo: override metadata: artist, title, year, etc. in manifest
 # todo: add optional album art in manifest
@@ -37,6 +37,121 @@ def run_custom(
     if retcode:
         raise RuntimeError(f'ffmpeg error: {bytes.decode(err)}')
     return out, err
+
+
+class _ParseDirective(Exception):
+    def __init__(self, directive):
+        self.directive = directive
+class _ParseEnd(Exception):
+    pass
+class ParseException(Exception):
+    def __init__(self, error, file_name, line_no):
+        self.line = line_no
+        self.file_name = file_name
+        self.message = error
+
+    def __str__(self):
+        return(f'{self.file_name}({self.line}): {self.message}')
+
+class Manifest:
+    def __init__(self, file_name, default_metadata):
+        self._key_value_pairs = default_metadata
+        self._album_cover = None
+        self._chapters = []
+        self._parse_file_name = file_name
+        self._parse_line_number = 0
+
+        # todo: read the file
+        with open(file_name, 'r', encoding='utf-8') as input_file:
+            self._parse_toplevel(input_file)
+
+    # Returns the album art image path or None
+    def get_album_art(self):
+        return self._album_cover
+
+    # Returns a dict of metadata key-value-pairs
+    def get_metadata_kvps(self):
+        return self._key_value_pairs
+
+    # Returns a flat list of tuples: (chapter_name, [files])
+    def get_chapters_and_files(self):
+        return self._chapters
+
+    # Returns a flat list of all files
+    def get_files(self):
+        files = []
+        for chapter in self._chapters:
+            files += chapter['files']
+        return files
+
+    #
+    # Parsing functions
+    #
+    def _parse_exception(self, message):
+        raise ParseException(
+            message,
+            self._parse_file_name,
+            self._parse_line_number)
+
+    # Ignores blank lines, comment lines, and strips leading/trailing whitespace
+    # Also jumps back to top level if a [ is hit
+    def _parse_get_line(self, file, top_level=False):
+        while True:
+            self._parse_line_number += 1
+            line = file.readline()
+            if not line:
+                raise _ParseEnd()
+
+            # trim the line
+            line = line.strip()
+            if len(line) == 0:
+                continue
+            if line[0] == '#':
+                continue
+            if not top_level and line[0] == '[':
+                raise _ParseDirective(line)
+            return line
+
+    def _parse_get_section_key(self, line):
+        if line.startswith('[') and line.endswith(']'):
+            line = line[1:-1] # remove []s
+            tokens = line.partition(':')
+            if not tokens or not tokens[0]:
+                self._parse_exception('Expected [key]')
+            return (tokens[0].strip(),
+                    tokens[2].strip() if len(tokens) > 2 else None)
+        else:
+            self._parse_exception('Expected section key "[key(: value)]"')
+
+    def _parse_toplevel(self, file):
+        try:
+            # get the first line
+            line = self._parse_get_line(file, top_level=True)
+
+            # keep looping over lines until we're done
+            while True:
+                try:
+                    key, value = self._parse_get_section_key(line)
+                    if key == 'metadata':
+                        if value: self._parse_exception(
+                                f'unexpected value "{value}" for "[metadata]"')
+                        self._parse_metadata(file)
+                    elif key == 'chapter':
+                        self._parse_chapter(file, value)
+                    else:
+                        self._parse_exception(f'Unexpected [{key}]')
+                except _ParseDirective as d:
+                    line = d.directive
+        except _ParseEnd:
+            return
+
+    def _parse_metadata(self, file):
+        while line := self._parse_get_line(file):
+            pass
+
+    def _parse_chapter(self, file, chapter):
+        while line := self._parse_get_line(file):
+            pass
 
 
 def write_chapters_metadata_file(chapters, output_file):
@@ -209,34 +324,45 @@ def get_input_output_file():
     parser.add_argument('input_filename', type=str,
                         help='A CSV file listing <"file","chapter">.')
     parser.add_argument('-o', '--output', type=str, required=False,
+                        dest='output_filename',
                         help='The output filename.')
     parser.add_argument('-u', '--update', action='store_true',
+                        dest='update_only',
                         help="Update metadata only; don't process audio data.")
+    parser.add_argument('-n', '--no-default-meta', action='store_true',
+                        help="*Don't* overwrite metadata with some built-in defaults.")
 
     args = parser.parse_args()
 
     # Derive a filename if output file is not provided
-    if not args.output:
-        args.output = f'{Path(args.input_filename).stem}.m4b'
+    if not args.output_filename:
+        args.output_filename = f'{Path(args.input_filename).stem}.m4b'
 
     # Ensure both input and output paths are fully qualified
     args.input_filename = os.path.abspath(args.input_filename)
-    args.output = os.path.abspath(args.output)
+    args.output_filename = os.path.abspath(args.output_filename)
 
-    return (args.input_filename, args.output, args.update)
+    return args
 
 
 if __name__ == '__main__':
     # parse command line
-    input_filename, merged_filename, update_only = get_input_output_file()
+    args = get_input_output_file()
 
     # set the current working directory to the directory of the input file
     # so that relative paths work correctly
-    os.chdir(os.path.dirname(input_filename))
+    os.chdir(os.path.dirname(args.input_filename))
 
-    # Read the chapters
-    with open(input_filename, 'r', newline='', encoding='utf-8') as input_file:
-        chapters = read_chapters_csv(input_file)
+    # Read the manifest
+    default_metadata = {} if args.no_default_meta else {
+        'genre': 'Audiobook',
+        'track': '1',
+        'title': Path(args.input_filename).stem
+    }
+    manifest = Manifest(args.input_filename, default_metadata)
+
+    chapters = [] # todo
+    quit() # todo
 
     # Write the metadata file with the chapters and stuff
     fd, ffmetadata_filename = tempfile.mkstemp()
@@ -245,14 +371,14 @@ if __name__ == '__main__':
             write_chapters_metadata_file(chapters, ffmetadata_file)
 
         # Write the merged file
-        if update_only and os.path.isfile(merged_filename):
+        if args.update_only and os.path.isfile(args.output_filename):
             update_audio_file(
                 ffmetadata_filename,
-                merged_filename)
+                args.output_filename)
         else:
             write_merged_audio_file(
                 chapters,
                 ffmetadata_filename,
-                merged_filename)
+                args.output_filename)
     finally:
         os.remove(ffmetadata_filename)
