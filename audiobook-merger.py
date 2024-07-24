@@ -115,11 +115,10 @@ class Manifest:
     def _parse_get_section_key(self, line):
         if line.startswith('[') and line.endswith(']'):
             line = line[1:-1] # remove []s
-            tokens = line.partition(':')
+            tokens = [x.strip() for x in line.partition(':')[::2]]
             if not tokens or not tokens[0]:
                 self._parse_exception('Expected [key]')
-            return (tokens[0].strip(),
-                    tokens[2].strip() if len(tokens) > 2 else None)
+            return tokens
         else:
             self._parse_exception('Expected section key "[key(: value)]"')
 
@@ -147,11 +146,28 @@ class Manifest:
 
     def _parse_metadata(self, file):
         while line := self._parse_get_line(file):
-            pass
+            # get the key value pair
+            key, value = [x.strip() for x in line.partition(':')[::2]]
+            if not key:
+                self._parse_exception('Expected: metadata key')
+
+            # special case the album art key
+            if key == 'album_art' or key == 'album_cover':
+                self._album_cover = value
+            else:
+                self._key_value_pairs[key] = value
 
     def _parse_chapter(self, file, chapter):
+        files = []
+        c = {
+            'name': chapter,
+            'files': files
+        }
+        # add the chapter to the list
+        self._chapters.append(c)
+        # accumulate a list of files
         while line := self._parse_get_line(file):
-            pass
+            files.append(line)
 
 
 def write_chapters_metadata_file(chapters, output_file):
@@ -360,6 +376,8 @@ if __name__ == '__main__':
         'title': Path(args.input_filename).stem
     }
     manifest = Manifest(args.input_filename, default_metadata)
+
+    # todo: need to go get chapter metadata from the input files
 
     chapters = [] # todo
     quit() # todo
