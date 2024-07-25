@@ -172,6 +172,16 @@ class Manifest:
             self._files.append(line)
 
 
+def make_temporary_filename(base_filename, new_extension=None):
+    path_parts = Path(base_filename)
+    if not new_extension:
+        new_extension = path_parts.suffix
+    return tempfile.mkstemp(
+        dir=path_parts.parent,
+        prefix=path_parts.stem,
+        suffix=f'.tmp.{new_extension}')
+
+
 def get_file_metadata(file_name):
     input_data, _ = run_custom([
         'ffmpeg',
@@ -302,13 +312,8 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
 
 
 def update_audio_file(ffmetadata_filename, album_art_filename, output_filename):
-    path_parts = Path(output_filename)
-
     # create a temporary file that we'll use to overwrite the original
-    _, temp_filename = tempfile.mkstemp(
-        dir=path_parts.parent,
-        prefix=path_parts.stem,
-        suffix=path_parts.suffix)
+    _, temp_filename = make_temporary_filename(output_filename)
     try:
         # annotate the original with the "copy" codec
         run_custom([
@@ -446,9 +451,9 @@ if __name__ == '__main__':
     # Write the metadata file with the chapters and stuff
     # todo: also use the same drive and folder as the original for this too
     # todo: make temporary filename for merged file
-    fd, ffmetadata_filename = tempfile.mkstemp()
+    ffmetadata_fd, ffmetadata_filename = make_temporary_filename(args.output_filename, '.txt')
     try:
-        with os.fdopen(fd, 'w') as ffmetadata_file:
+        with os.fdopen(ffmetadata_fd, 'w') as ffmetadata_file:
             write_metadata_file(
                 manifest.get_metadata_kvps(),
                 chapters,
