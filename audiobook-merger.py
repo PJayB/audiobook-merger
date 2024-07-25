@@ -181,7 +181,7 @@ def make_temporary_filename(base_filename, new_extension=None):
     return tempfile.mkstemp(
         dir=path_parts.parent,
         prefix=path_parts.stem,
-        suffix=f'.tmp.{new_extension}')
+        suffix=f'.tmp{new_extension}')
 
 
 def get_file_metadata(file_name):
@@ -451,18 +451,14 @@ if __name__ == '__main__':
     chapters = get_chapter_metadata(manifest.get_chapters_and_files())
 
     # Write the metadata file with the chapters and stuff
-    # todo: also use the same drive and folder as the original for this too
-    # todo: make temporary filename for merged file
-    ffmetadata_fd, ffmetadata_filename = make_temporary_filename(args.output_filename, '.txt')
+    ffmetadata_fd, ffmetadata_filename = make_temporary_filename(
+        args.output_filename, '.txt')
     try:
         with os.fdopen(ffmetadata_fd, 'w') as ffmetadata_file:
             write_metadata_file(
                 manifest.get_metadata_kvps(),
                 chapters,
                 ffmetadata_file)
-
-        # todo: split the merge and metadata steps, always write to the temporary
-        # file, and always update metadata after; streamline codepaths
 
         # Write the merged file
         if args.update_only and os.path.isfile(args.output_filename):
