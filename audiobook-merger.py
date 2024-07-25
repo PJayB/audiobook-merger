@@ -456,7 +456,7 @@ if __name__ == '__main__':
     try:
         with os.fdopen(ffmetadata_fd, 'w') as ffmetadata_file:
             write_metadata_file(
-                manifest.get_metadata_kvps(),
+                metadata,
                 chapters,
                 ffmetadata_file)
 
