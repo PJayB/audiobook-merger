@@ -21,9 +21,7 @@ def run_stream(args, capture_stdout=True, capture_stderr=True):
         args, stdin=stdin_stream, stdout=stdout_stream, stderr=stderr_stream
     )
 
-#
-# Hacked together from ffmpeg.run to run a custom command line
-#
+
 def run_custom(
     args,
     capture_stdout=True,
@@ -237,31 +235,17 @@ class FFmpegCommandLine:
         self._args = []
         self.set_output(output_file, overwrite)
 
-    def get_file_index(self, file):
-        return self._input_files.index(file)
+    def __str__(self):
+        return ' '.join([f"'{a}'" for a in self.get_cmdline()])
 
     def add_args(self, *args):
         self._args.extend([str(arg) for arg in args])
-
-    def add_pre_input_args(self, *args):
-        self._base.extend([str(arg) for arg in args])
 
     # adds a metadata input and maps it
     def add_metadata_file(self, file):
         index = self.add_file(file)
         self.add_args('-map_metadata', index)
         return index
-
-    # maps a file to another file
-    def add_map_to_file(self, file, maps_to_other_file):
-        src_index = self.get_file_index(file)
-        dst_index = self.get_file_index(file)
-        self.add_map(src_index, dst_index)
-
-    # maps a file to a stream index
-    def add_map_to_index(self, file, stream_index):
-        src_index = self.get_file_index(file)
-        self.add_map(src_index, stream_index)
 
     # maps a file index to a stream index
     def add_map(self, file_index, stream_index):
@@ -281,13 +265,9 @@ class FFmpegCommandLine:
         )
         return art_index
 
-    def add_album_art_to_file(self, art_file, input_file):
-        input_index = self.get_file_index(input_file)
-        return self.add_album_art_to_index(art_file, input_index)
-
-    def add_file(self, file, mapping=None):
+    def add_file(self, file, mapping=None, pre_input_args=[]):
         index = len(self._input_files)
-        self._input_files.append(file)
+        self._input_files.append((file, pre_input_args))
         if mapping != None:
             self.add_map(index, mapping)
         return index
@@ -300,8 +280,9 @@ class FFmpegCommandLine:
         cl = list(self._base)
 
         for file in self._input_files:
+            cl.extend(file[1])
             cl.append('-i')
-            cl.append(file)
+            cl.append(file[0])
 
         if self._format:
             cl.extend(['-f', self._format])
@@ -407,12 +388,11 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
 
     # Build a commandline for the *output*
     encode_cmd = FFmpegCommandLine()
-    encode_cmd.add_pre_input_args(
+    encode_cmd.add_file('pipe:0', 0, pre_input_args=[
         '-f', 's16le',
         '-ac', '2',
         '-ar', '44100'
-    )
-    encode_cmd.add_file('pipe:0', 0)
+    ])
     encode_cmd.add_metadata_file(ffmetadata_filename)
     if album_art_filename:
         encode_cmd.add_album_art_to_index(album_art_filename, 0)
@@ -441,6 +421,12 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
 
             # convert the file to PCM on-the-fly
             input_data, _ = run_custom(decode_cmd.get_cmdline())
+
+            # check the process health
+            ret = output_process.poll()
+            if ret:
+                err = bytes.decode(output_process.stderr.read())
+                raise RuntimeError(f'ffmpeg aborted unexpectedly: {err}')
 
             # Send the data to the output process
             output_process.stdin.write(input_data)
@@ -542,9 +528,12 @@ def parse_command_line():
 
     args = parser.parse_args()
 
+    if len(args.input_filenames) == 0:
+        raise RuntimeError('Expected input filenames')
+
     # Derive a filename if output file is not provided
     if not args.output_filename:
-        args.output_filename = f'{Path(args.input_filename).stem}.m4b'
+        args.output_filename = f'{Path(args.input_filenames[0]).stem}.m4b'
 
     # Ensure both input and output paths are fully qualified
     args.input_filenames = [os.path.abspath(x) for x in args.input_filenames]
