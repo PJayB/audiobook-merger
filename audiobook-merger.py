@@ -590,6 +590,10 @@ if __name__ == '__main__':
         manifest.key_value_pairs
     )
 
+    # check the album art if any
+    if manifest.album_art and not os.path.isfile(manifest.album_art):
+        raise FileNotFoundError(f'File not found: {manifest.album_art}')
+
     # get chapter metadata from the input files
     chapters = get_chapter_metadata(manifest.chapters)
 
