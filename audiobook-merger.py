@@ -33,7 +33,10 @@ def run_custom(
     out, err = process.communicate(input)
     retcode = process.poll()
     if retcode:
-        raise RuntimeError(f'ffmpeg error: {bytes.decode(err)}')
+        cmdline_str = ' '.join([f"'{a}'" for a in args])
+        raise RuntimeError(f'ffmpeg error:\n'
+                           f'Command line: {cmdline_str}\n'
+                           f'{bytes.decode(err)}')
     return out, err
 
 
