@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import argparse
+import csv
 import os
 from pathlib import Path
 import shutil
@@ -54,38 +55,24 @@ class ParseException(Exception):
     def __str__(self):
         return(f'{self.file_name}({self.line}): {self.message}')
 
+
 class Manifest:
-    def __init__(self, file_name):
-        self._key_value_pairs = {}
-        self._album_cover = None
-        self._files = []
-        self._chapters = []
+    def __init__(self):
+        self.key_value_pairs = {}
+        self.album_art = None
+        self.files = []
+        self.chapters = []
+
+
+class ManifestParser:
+    def __init__(self, file_name, manifest):
         self._parse_file_name = file_name
         self._parse_line_number = 0
+        self._manifest = manifest
 
         # todo: read the file
         with open(file_name, 'r', encoding='utf-8') as input_file:
             self._parse_toplevel(input_file)
-
-    # Returns the album art image path or None
-    def get_album_art(self):
-        return self._album_cover
-
-    # Returns a dict of metadata key-value-pairs
-    def get_metadata_kvps(self):
-        return self._key_value_pairs
-
-    # Returns a flat list of tuples: (chapter_name, [files])
-    def get_chapters_and_files(self):
-        return self._chapters
-
-    # Returns a flat list of all files
-    def get_files(self):
-        return self._files
-
-    # Returns the number of files in the book
-    def get_file_count(self):
-        return len(self._files)
 
     #
     # Parsing functions
@@ -156,22 +143,87 @@ class Manifest:
 
             # special case the album art key
             if key == 'album_art' or key == 'album_cover':
-                self._album_cover = value
+                self._manifest.album_art = value
             else:
-                self._key_value_pairs[key] = value
+                self._manifest.key_value_pairs[key] = value
 
     def _parse_chapter(self, file, chapter):
-        files = []
-        c = {
-            'name': chapter,
-            'files': files
-        }
-        # add the chapter to the list
-        self._chapters.append(c)
+        # find or append the chapter
+        chapter_matches = [x for x in \
+                            self._manifest.chapters if x['name'] == chapter]
+        if len(chapter_matches) > 0:
+            c = chapter_matches[-1]
+        else:
+            c = {
+                'name': chapter,
+                'files': files
+            }
+            self._manifest.chapters.append(c)
+
         # accumulate a list of files
+        files = c['files']
         while line := self._parse_get_line(file):
             files.append(line)
-            self._files.append(line)
+            self._manifest.files.append(line)
+
+
+class CsvParser:
+    def __init__(self, input_filename, manifest):
+        self._parse_file_name = input_filename
+        self._parse_line_number = 0
+
+        with open(input_filename, 'r', newline='', encoding='utf-8') as input_file:
+            chapters = self._parse(input_file)
+
+        # Merge chapters and files into the manifest
+        for c in chapters:
+            chapter_matches = [x for x in \
+                               manifest.chapters if x['name'] == c['name']]
+            if len(chapter_matches) == 0:
+                manifest.chapters.append(c)
+            else:
+                chapter_matches[-1]['files'].extend(c['files'])
+
+            manifest.files.extend(c['files'])
+
+    def _parse(self, input_file):
+        # ordered chapter names
+        chapter_names = []
+        # map of file lists for each chapter
+        chapter_map = {}
+
+        def add_file(file, chap):
+            if not chap in chapter_map:
+                chapter_names.append(chap)
+                chapter_map[chap] = []
+
+            # Add tuple of name and duration
+            chapter_map[chap].append(file)
+
+        # Read the CSV file
+        reader = csv.reader(input_file, delimiter=',', quotechar='"')
+        self._parse_line_number = 0
+        for row in reader:
+            self._parse_line_number += 1
+            if len(row) > 1:
+                add_file(row[0], row[1])
+            elif len(row) > 0:
+                raise ParseException(
+                    f"Expected <filename>,<chapter>: '{row}'",
+                    self._parse_file_name,
+                    self._parse_line_number)
+
+        # flattens all files in unordered chapters into ordered chapters
+        def flatten_chapters(chapter_names, chapter_map):
+            sorted_chapters = []
+            for name in chapter_names:
+                sorted_chapters.append({
+                    'name': name,
+                    'files': chapter_map[name]
+                    })
+            return sorted_chapters
+
+        return flatten_chapters(chapter_names, chapter_map)
 
 
 class FFmpegCommandLine:
@@ -470,11 +522,11 @@ def get_chapter_metadata(input_chapters):
     return chapters
 
 
-def get_input_output_file():
+def parse_command_line():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('input_filename', type=str,
-                        help='A CSV file listing <"file","chapter">.')
+    parser.add_argument('input_filenames', type=str, nargs='+', metavar="FILE",
+                        help='A manifest, or CSV file listing <"file","chapter">.')
     parser.add_argument('-o', '--output', type=str, required=False,
                         dest='output_filename',
                         help='The output filename.')
@@ -495,32 +547,39 @@ def get_input_output_file():
         args.output_filename = f'{Path(args.input_filename).stem}.m4b'
 
     # Ensure both input and output paths are fully qualified
-    args.input_filename = os.path.abspath(args.input_filename)
+    args.input_filenames = [os.path.abspath(x) for x in args.input_filenames]
     args.output_filename = os.path.abspath(args.output_filename)
 
     # Derive the root if not provided
     if not args.root_dir:
-        args.root_dir = os.path.dirname(args.input_filename)
+        args.root_dir = os.path.dirname(args.input_filenames[0])
 
     return args
 
 
 if __name__ == '__main__':
     # parse command line
-    args = get_input_output_file()
+    args = parse_command_line()
 
     # set the current working directory to the directory of the input file
     # so that relative paths work correctly
     os.chdir(args.root_dir)
 
-    # Read the manifest
-    manifest = Manifest(args.input_filename)
-    if manifest.get_file_count() == 0:
-        # todo: error
-        quit(1) # nothing to do
+    # Read the manifest(s)
+    manifest = Manifest()
+    for input_file in args.input_filenames:
+        if input_file.endswith('.csv'):
+            CsvParser(input_file, manifest)
+        else:
+            ManifestParser(input_file, manifest)
+
+    # Abort if there are no files
+    if len(manifest.files) == 0:
+        raise RuntimeError(
+            f'No input files in {",".join(args.input_filenames)}')
 
     # get metadata from the first file and merge it into all the rest
-    title = Path(args.input_filename).stem
+    title = Path(args.input_filenames[0]).stem
     default_metadata = {
         'genre': 'Audiobook',
         'title': title,
@@ -535,15 +594,15 @@ if __name__ == '__main__':
         'TIT1': None,
     }
     metadata = merge_metadata(
-        get_file_metadata(manifest.get_files()[0]) \
+        get_file_metadata(manifest.files[0]) \
             if not args.no_inherit_meta else {},
         cleanup_metadata,
         default_metadata if not args.no_default_meta else {},
-        manifest.get_metadata_kvps()
+        manifest.key_value_pairs
     )
 
     # get chapter metadata from the input files
-    chapters = get_chapter_metadata(manifest.get_chapters_and_files())
+    chapters = get_chapter_metadata(manifest.chapters)
 
     # Write the metadata file with the chapters and stuff
     ffmetadata_fd, ffmetadata_filename = make_temporary_filename(
@@ -559,13 +618,13 @@ if __name__ == '__main__':
         if args.update_only and os.path.isfile(args.output_filename):
             update_audio_file(
                 ffmetadata_filename,
-                manifest.get_album_art(),
+                manifest.album_art,
                 args.output_filename)
         else:
             write_merged_audio_file(
                 chapters,
                 ffmetadata_filename,
-                manifest.get_album_art(),
+                manifest.album_art,
                 args.output_filename)
     finally:
         os.remove(ffmetadata_filename)
