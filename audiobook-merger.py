@@ -174,6 +174,95 @@ class Manifest:
             self._files.append(line)
 
 
+class FFmpegCommandLine:
+    def __init__(self, output_file=None, format='mp4', overwrite=False):
+        self._input_files = []
+        self._base = [
+            'ffmpeg',
+            '-v', 'error'
+        ]
+        self._format = format
+        self._args = []
+        self.set_output(output_file, overwrite)
+
+    def get_file_index(self, file):
+        return self._input_files.index(file)
+
+    def add_args(self, *args):
+        self._args.extend([str(arg) for arg in args])
+
+    def add_pre_input_args(self, *args):
+        self._base.extend([str(arg) for arg in args])
+
+    # adds a metadata input and maps it
+    def add_metadata_file(self, file):
+        index = self.add_file(file)
+        self.add_args('-map_metadata', index)
+        return index
+
+    # maps a file to another file
+    def add_map_to_file(self, file, maps_to_other_file):
+        src_index = self.get_file_index(file)
+        dst_index = self.get_file_index(file)
+        self.add_map(src_index, dst_index)
+
+    # maps a file to a stream index
+    def add_map_to_index(self, file, stream_index):
+        src_index = self.get_file_index(file)
+        self.add_map(src_index, stream_index)
+
+    # maps a file index to a stream index
+    def add_map(self, file_index, stream_index):
+        self.add_args('-map', f'{file_index}:{stream_index}')
+
+    # adds album art to a given stream
+    def add_album_art_to_index(self, art_file, stream_index):
+        # add the art file as input
+        art_index = self.add_file(art_file)
+        # map the art file to the main stream
+        self.add_map(art_index, stream_index)
+        # add extra args
+        self.add_args(
+            '-id3v2_version', 3,
+            '-metadata:s:v', 'title="Album cover"',
+            '-metadata:s:v', 'comment="Cover (front)"'
+        )
+        return art_index
+
+    def add_album_art_to_file(self, art_file, input_file):
+        input_index = self.get_file_index(input_file)
+        return self.add_album_art_to_index(art_file, input_index)
+
+    def add_file(self, file, mapping=None):
+        index = len(self._input_files)
+        self._input_files.append(file)
+        if mapping != None:
+            self.add_map(index, mapping)
+        return index
+
+    def set_output(self, file, overwrite=False):
+        self._output_file = file
+        self._overwrite = overwrite
+
+    def get_cmdline(self):
+        cl = list(self._base)
+
+        for file in self._input_files:
+            cl.append('-i')
+            cl.append(file)
+
+        if self._format:
+            cl.extend(['-f', self._format])
+
+        cl.extend(self._args)
+
+        if self._overwrite:
+            cl.append('-y')
+        if self._output_file:
+            cl.append(self._output_file)
+        return cl
+
+
 def make_temporary_filename(base_filename, new_extension=None):
     path_parts = Path(base_filename)
     if not new_extension:
@@ -185,13 +274,13 @@ def make_temporary_filename(base_filename, new_extension=None):
 
 
 def get_file_metadata(file_name):
-    input_data, _ = run_custom([
-        'ffmpeg',
-        '-i', file_name,
-        '-f', 'ffmetadata',
-        '-v', 'error',
-        '-y', '-'
-        ])
+    cmd = FFmpegCommandLine(
+        output_file='-',
+        overwrite=True,
+        format='ffmetadata')
+    cmd.add_file(file_name)
+
+    input_data, _ = run_custom(cmd.get_cmdline())
 
     metadata = {}
 
@@ -263,19 +352,22 @@ def write_metadata_file(
 
 
 def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, output_filename):
-    # This is the output process. We'll stream data to this via its stdin.
-    output_process = run_stream([
-        'ffmpeg',
+
+    # Build a commandline for the *output*
+    encode_cmd = FFmpegCommandLine()
+    encode_cmd.add_pre_input_args(
         '-f', 's16le',
         '-ac', '2',
-        '-ar', '44100',
-        '-i', 'pipe:0',
-        '-i', ffmetadata_filename,
-        '-map_metadata', '1',
-        '-f', 'mp4',
-        '-v', 'error',
-        '-y', output_filename
-    ])
+        '-ar', '44100'
+    )
+    encode_cmd.add_file('pipe:0', 0)
+    encode_cmd.add_metadata_file(ffmetadata_filename)
+    if album_art_filename:
+        encode_cmd.add_album_art_to_index(album_art_filename, 0)
+    encode_cmd.set_output(output_filename, True)
+
+    # This is the output process. We'll stream data to this via its stdin.
+    output_process = run_stream(encode_cmd.get_cmdline())
 
     # Open the input pipe and send each file over for processing
     files = []
@@ -286,16 +378,17 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
     with tqdm(total=len(files)) as pbar:
         for file in files:
             pbar.set_description(f'Writing {file}')
-            # convert the file to PCM on-the-fly
-            input_data, _ = run_custom([
-                'ffmpeg',
-                '-i', file,
-                '-f', 's16le',
+
+            decode_cmd = FFmpegCommandLine(format='s16le')
+            decode_cmd.add_file(file)
+            decode_cmd.add_args(
                 '-ac', '2',
-                '-ar', '44100',
-                '-v', 'error',
-                '-y', '-'
-                ])
+                '-ar', '44100'
+            )
+            decode_cmd.set_output('-', overwrite=True)
+
+            # convert the file to PCM on-the-fly
+            input_data, _ = run_custom(decode_cmd.get_cmdline())
 
             # Send the data to the output process
             output_process.stdin.write(input_data)
@@ -316,18 +409,19 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
 def update_audio_file(ffmetadata_filename, album_art_filename, output_filename):
     # create a temporary file that we'll use to overwrite the original
     _, temp_filename = make_temporary_filename(output_filename)
+
+    # Build a commandline
+    copy_cmd = FFmpegCommandLine()
+    copy_cmd.add_file(output_filename, 0)
+    copy_cmd.add_metadata_file(ffmetadata_filename)
+    if album_art_filename:
+        copy_cmd.add_album_art_to_index(album_art_filename, 0)
+    copy_cmd.add_args('-codec', 'copy')
+    copy_cmd.set_output(temp_filename, True)
+
     try:
         # annotate the original with the "copy" codec
-        run_custom([
-            'ffmpeg',
-            '-i', output_filename,
-            '-i', ffmetadata_filename,
-            '-map_metadata', '1',
-            '-codec', 'copy',
-            '-v', 'error',
-            '-y', temp_filename
-            ],
-            capture_stdout=False)
+        run_custom(copy_cmd.get_cmdline(), capture_stdout=False)
 
         # move the file over the original
         shutil.move(temp_filename, output_filename)
@@ -441,7 +535,8 @@ if __name__ == '__main__':
         'TIT1': None,
     }
     metadata = merge_metadata(
-        get_file_metadata(manifest.get_files()[0]) if not args.no_inherit_meta else {},
+        get_file_metadata(manifest.get_files()[0]) \
+            if not args.no_inherit_meta else {},
         cleanup_metadata,
         default_metadata if not args.no_default_meta else {},
         manifest.get_metadata_kvps()
