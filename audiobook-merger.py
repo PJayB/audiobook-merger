@@ -6,14 +6,18 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from tqdm import tqdm
 
-# todo: -disposition:v:1 attached_pic for album art
+# todo: fix unhelpful "broken pipe" issue when there is an error
 # todo: write to temporary file and then move into position
 # todo: a manifest generation tool that dumps a template manifest
 # todo: chapter regex option that pulls from filenames and/or track names
 # todo: iff. all inputs have chapters, use those instead
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
 
 def run_stream(args, capture_stdout=True, capture_stderr=True):
     stdin_stream = subprocess.PIPE if input is not None else None
@@ -252,27 +256,29 @@ class FFmpegCommandLine:
 
     # maps a file index to a stream index
     def add_map(self, file_index, stream_index):
-        self.add_args('-map', f'{file_index}:{stream_index}')
+        if stream_index != None:
+            self.add_args('-map', f'{file_index}:{stream_index}')
+        else:
+            self.add_args('-map', file_index)
 
     # adds album art to a given stream
-    def add_album_art_to_index(self, art_file, stream_index):
-        # add the art file as input
-        art_index = self.add_file(art_file)
-        # map the art file to the main stream
-        self.add_map(art_index, stream_index)
+    def add_album_art_to_index(self, art_file, stream_index=1):
+        # add the art file as video input
+        art_index = self.add_file(art_file, True, f':v{stream_index}')
         # add extra args
         self.add_args(
+            f'-disposition:v:{stream_index}', 'attached_pic',
             '-id3v2_version', 3,
             '-metadata:s:v', 'title="Album cover"',
             '-metadata:s:v', 'comment="Cover (front)"'
         )
         return art_index
 
-    def add_file(self, file, mapping=None, pre_input_args=[]):
+    def add_file(self, file, map=False, stream_index=None, pre_input_args=[]):
         index = len(self._input_files)
         self._input_files.append((file, pre_input_args))
-        if mapping != None:
-            self.add_map(index, mapping)
+        if map:
+            self.add_map(index, stream_index)
         return index
 
     def set_output(self, file, overwrite=False):
@@ -394,14 +400,14 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
 
     # Build a commandline for the *output*
     encode_cmd = FFmpegCommandLine()
-    encode_cmd.add_file('pipe:0', 0, pre_input_args=[
+    encode_cmd.add_file('pipe:0', map=True, stream_index=':a', pre_input_args=[
         '-f', 's16le',
         '-ac', '2',
         '-ar', '44100'
     ])
     encode_cmd.add_metadata_file(ffmetadata_filename)
     if album_art_filename:
-        encode_cmd.add_album_art_to_index(album_art_filename, 0)
+        encode_cmd.add_album_art_to_index(album_art_filename)
     encode_cmd.set_output(output_filename, True)
 
     # This is the output process. We'll stream data to this via its stdin.
@@ -424,6 +430,9 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
                 '-ar', '44100'
             )
             decode_cmd.set_output('-', overwrite=True)
+
+            # todo: remove me
+            print(f'{decode_cmd} | {encode_cmd}')
 
             # convert the file to PCM on-the-fly
             input_data, _ = run_custom(decode_cmd.get_cmdline())
@@ -456,10 +465,10 @@ def update_audio_file(ffmetadata_filename, album_art_filename, output_filename):
 
     # Build a commandline
     copy_cmd = FFmpegCommandLine()
-    copy_cmd.add_file(output_filename, 0)
+    copy_cmd.add_file(output_filename, map=True, stream_index=':a')
     copy_cmd.add_metadata_file(ffmetadata_filename)
     if album_art_filename:
-        copy_cmd.add_album_art_to_index(album_art_filename, 0)
+        copy_cmd.add_album_art_to_index(album_art_filename)
     copy_cmd.add_args('-codec', 'copy')
     copy_cmd.set_output(temp_filename, True)
 
@@ -471,7 +480,11 @@ def update_audio_file(ffmetadata_filename, album_art_filename, output_filename):
         shutil.move(temp_filename, output_filename)
     except Exception as e:
         # Something went wrong, so delete the temporary file
-        os.remove(temp_filename)
+        try:
+            os.remove(temp_filename)
+        except Exception as e2:
+            # ignore errors removing the temporary file
+            eprint(f'Warning: couldn\'t remove temporary file "{temp_filename}": {e2}')
         # Rethrow the exception
         raise e
 
@@ -493,9 +506,6 @@ def get_chapter_metadata(input_chapters):
             }
             for file in input_chapter['files']:
                 pbar.set_description(f'Analyzing {file}')
-
-                # resolve the filename
-                file = os.path.abspath(file)
 
                 # Probe the file for length
                 duration_str, err = run_custom(['ffprobe',
