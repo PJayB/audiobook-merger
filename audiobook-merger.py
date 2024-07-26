@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 from tqdm import tqdm
 
+# todo: fix chapter names metadata not "sticking"
 # todo: a manifest generation tool that dumps a template manifest
 # todo: chapter regex option that pulls from filenames and/or track names
 # todo: iff. all inputs have chapters, use those instead
@@ -378,7 +379,9 @@ def write_metadata_file(
         # add to chapter metadata
         output_file.write(f'START={chapter_start}\n')
         output_file.write(f'END={chapter_end}\n')
-        output_file.write(f'TITLE={chapter["name"]}\n')
+
+        # todo: escape special characters (‘=’, ‘;’, ‘#’, ‘\’ and a newline)
+        output_file.write(f'title={chapter["name"]}\n')
 
         chapter_start = chapter_end
 
