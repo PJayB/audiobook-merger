@@ -3,12 +3,12 @@ import argparse
 import csv
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
 from tqdm import tqdm
 
-# todo: fix chapter names metadata not "sticking"
 # todo: a manifest generation tool that dumps a template manifest
 # todo: chapter regex option that pulls from filenames and/or track names
 # todo: iff. all inputs have chapters, use those instead
@@ -245,6 +245,7 @@ class FFmpegCommandLine:
     def add_metadata_file(self, file):
         index = self.add_file(file)
         self.add_args('-map_metadata', index)
+        self.add_args('-map_chapters', index)
         return index
 
     # maps a file index to a stream index
@@ -381,7 +382,8 @@ def write_metadata_file(
         output_file.write(f'END={chapter_end}\n')
 
         # todo: escape special characters (‘=’, ‘;’, ‘#’, ‘\’ and a newline)
-        output_file.write(f'title={chapter["name"]}\n')
+        escaped=re.sub(r'([;=#\\])', lambda m: f'\\{m.group(0)}', chapter['name'])
+        output_file.write(f'title={escaped}\n')
 
         chapter_start = chapter_end
 
