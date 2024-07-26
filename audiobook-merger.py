@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 from tqdm import tqdm
 
+# todo: write to temporary file and then move into position
 # todo: a manifest generation tool that dumps a template manifest
 # todo: chapter regex option that pulls from filenames and/or track names
 # todo: iff. all inputs have chapters, use those instead
