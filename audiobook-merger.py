@@ -10,6 +10,7 @@ import sys
 import tempfile
 from tqdm import tqdm
 
+# todo: fix Windows "file still in use" bug
 # todo: fix unhelpful "broken pipe" issue when there is an error
 # todo: write to temporary file and then move into position
 # todo: a manifest generation tool that dumps a template manifest
@@ -74,7 +75,6 @@ class ManifestParser:
         self._parse_line_number = 0
         self._manifest = manifest
 
-        # todo: read the file
         with open(file_name, 'r', encoding='utf-8') as input_file:
             self._parse_toplevel(input_file)
 
@@ -230,6 +230,11 @@ class CsvParser:
         return flatten_chapters(chapter_names, chapter_map)
 
 
+def _file_stream_index(file_index, stream_index):
+    return f'{file_index}:{stream_index}' if stream_index \
+        else file_index
+
+
 class FFmpegCommandLine:
     def __init__(self, output_file=None, format='mp4', overwrite=False):
         self._input_files = []
@@ -257,20 +262,22 @@ class FFmpegCommandLine:
     # maps a file index to a stream index
     def add_map(self, file_index, stream_index):
         if stream_index != None:
-            self.add_args('-map', f'{file_index}:{stream_index}')
+            self.add_args('-map', _file_stream_index(file_index, stream_index))
         else:
             self.add_args('-map', file_index)
 
     # adds album art to a given stream
-    def add_album_art_to_index(self, art_file, stream_index=1):
+    def add_album_art_to_index(self, art_file, stream_index=None):
+        stream_index = _file_stream_index('v', stream_index)
         # add the art file as video input
-        art_index = self.add_file(art_file, True, f':v{stream_index}')
+        art_index = self.add_file(art_file, True, stream_index)
         # add extra args
         self.add_args(
-            f'-disposition:v:{stream_index}', 'attached_pic',
+            _file_stream_index('-disposition', stream_index), 'attached_pic',
+            '-vcodec', 'copy',
             '-id3v2_version', 3,
-            '-metadata:s:v', 'title="Album cover"',
-            '-metadata:s:v', 'comment="Cover (front)"'
+            _file_stream_index('-metadata:s', stream_index), 'title="Album cover"',
+            _file_stream_index('-metadata:s', stream_index), 'comment="Cover (front)"'
         )
         return art_index
 
@@ -293,10 +300,10 @@ class FFmpegCommandLine:
             cl.append('-i')
             cl.append(file[0])
 
+        cl.extend(self._args)
+
         if self._format:
             cl.extend(['-f', self._format])
-
-        cl.extend(self._args)
 
         if self._overwrite:
             cl.append('-y')
@@ -389,7 +396,7 @@ def write_metadata_file(
         output_file.write(f'START={chapter_start}\n')
         output_file.write(f'END={chapter_end}\n')
 
-        # todo: escape special characters (‘=’, ‘;’, ‘#’, ‘\’ and a newline)
+        # escape special characters (‘=’, ‘;’, ‘#’, ‘\’ and a newline)
         escaped=re.sub(r'([;=#\\])', lambda m: f'\\{m.group(0)}', chapter['name'])
         output_file.write(f'title={escaped}\n')
 
@@ -400,7 +407,7 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
 
     # Build a commandline for the *output*
     encode_cmd = FFmpegCommandLine()
-    encode_cmd.add_file('pipe:0', map=True, stream_index=':a', pre_input_args=[
+    encode_cmd.add_file('pipe:0', map=True, stream_index='a', pre_input_args=[
         '-f', 's16le',
         '-ac', '2',
         '-ar', '44100'
@@ -408,6 +415,7 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
     encode_cmd.add_metadata_file(ffmetadata_filename)
     if album_art_filename:
         encode_cmd.add_album_art_to_index(album_art_filename)
+    encode_cmd.add_args('-acodec', 'aac')
     encode_cmd.set_output(output_filename, True)
 
     # This is the output process. We'll stream data to this via its stdin.
@@ -430,9 +438,6 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
                 '-ar', '44100'
             )
             decode_cmd.set_output('-', overwrite=True)
-
-            # todo: remove me
-            print(f'{decode_cmd} | {encode_cmd}')
 
             # convert the file to PCM on-the-fly
             input_data, _ = run_custom(decode_cmd.get_cmdline())
@@ -465,11 +470,11 @@ def update_audio_file(ffmetadata_filename, album_art_filename, output_filename):
 
     # Build a commandline
     copy_cmd = FFmpegCommandLine()
-    copy_cmd.add_file(output_filename, map=True, stream_index=':a')
+    copy_cmd.add_file(output_filename, map=True, stream_index='a')
     copy_cmd.add_metadata_file(ffmetadata_filename)
     if album_art_filename:
         copy_cmd.add_album_art_to_index(album_art_filename)
-    copy_cmd.add_args('-codec', 'copy')
+    copy_cmd.add_args('-acodec', 'copy')
     copy_cmd.set_output(temp_filename, True)
 
     try:
