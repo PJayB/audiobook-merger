@@ -19,6 +19,15 @@ from tqdm import tqdm
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
+
+def delete_temporary_file(file_name):
+    try:
+        os.remove(file_name)
+    except Exception as e2:
+        # ignore errors removing the temporary file
+        eprint(f'Warning: couldn\'t remove temporary file "{file_name}": {e2}')
+
+
 def run_stream(args, capture_stdout=True, capture_stderr=True):
     stdin_stream = subprocess.PIPE if input is not None else None
     stdout_stream = subprocess.PIPE if capture_stdout else None
@@ -469,12 +478,9 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
         shutil.move(temp_filename, output_filename)
     except Exception as e:
         # Something went wrong, so delete the temporary file
-        try:
-            os.remove(temp_filename)
-        except Exception as e2:
-            # ignore errors removing the temporary file
-            eprint(f'Warning: couldn\'t remove temporary file "{temp_filename}": {e2}')
-
+        delete_temporary_file(temp_filename)
+        # Rethrow the error
+        raise e
 
 def update_audio_file(ffmetadata_filename, album_art_filename, output_filename):
     # create a temporary file that we'll use to overwrite the original
@@ -497,11 +503,7 @@ def update_audio_file(ffmetadata_filename, album_art_filename, output_filename):
         shutil.move(temp_filename, output_filename)
     except Exception as e:
         # Something went wrong, so delete the temporary file
-        try:
-            os.remove(temp_filename)
-        except Exception as e2:
-            # ignore errors removing the temporary file
-            eprint(f'Warning: couldn\'t remove temporary file "{temp_filename}": {e2}')
+        delete_temporary_file(temp_filename)
         # Rethrow the exception
         raise e
 
@@ -653,4 +655,4 @@ if __name__ == '__main__':
                 manifest.album_art,
                 args.output_filename)
     finally:
-        os.remove(ffmetadata_filename)
+        delete_temporary_file(ffmetadata_filename)
