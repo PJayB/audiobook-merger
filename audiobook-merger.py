@@ -12,7 +12,6 @@ from tqdm import tqdm
 
 # todo: fix Windows "file still in use" bug
 # todo: fix unhelpful "broken pipe" issue when there is an error
-# todo: write to temporary file and then move into position
 # todo: a manifest generation tool that dumps a template manifest
 # todo: chapter regex option that pulls from filenames and/or track names
 # todo: iff. all inputs have chapters, use those instead
@@ -404,6 +403,8 @@ def write_metadata_file(
 
 
 def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, output_filename):
+    # create a temporary file that we'll use to overwrite the original
+    _, temp_filename = make_temporary_filename(output_filename)
 
     # Build a commandline for the *output*
     encode_cmd = FFmpegCommandLine()
@@ -416,52 +417,63 @@ def write_merged_audio_file(chapters, ffmetadata_filename, album_art_filename, o
     if album_art_filename:
         encode_cmd.add_album_art_to_index(album_art_filename)
     encode_cmd.add_args('-acodec', 'aac')
-    encode_cmd.set_output(output_filename, True)
+    encode_cmd.set_output(temp_filename, True)
 
-    # This is the output process. We'll stream data to this via its stdin.
-    output_process = run_stream(encode_cmd.get_cmdline())
+    try:
+        # This is the output process. We'll stream data to this via its stdin.
+        output_process = run_stream(encode_cmd.get_cmdline())
 
-    # Open the input pipe and send each file over for processing
-    files = []
-    for chapter in chapters:
-        for file, duration in chapter['files']:
-            files.append(file)
+        # Open the input pipe and send each file over for processing
+        files = []
+        for chapter in chapters:
+            for file, duration in chapter['files']:
+                files.append(file)
 
-    with tqdm(total=len(files)) as pbar:
-        for file in files:
-            pbar.set_description(f'Writing {file}')
+        with tqdm(total=len(files)) as pbar:
+            for file in files:
+                pbar.set_description(f'Writing {file}')
 
-            decode_cmd = FFmpegCommandLine(format='s16le')
-            decode_cmd.add_file(file)
-            decode_cmd.add_args(
-                '-ac', '2',
-                '-ar', '44100'
-            )
-            decode_cmd.set_output('-', overwrite=True)
+                decode_cmd = FFmpegCommandLine(format='s16le')
+                decode_cmd.add_file(file)
+                decode_cmd.add_args(
+                    '-ac', '2',
+                    '-ar', '44100'
+                )
+                decode_cmd.set_output('-', overwrite=True)
 
-            # convert the file to PCM on-the-fly
-            input_data, _ = run_custom(decode_cmd.get_cmdline())
+                # convert the file to PCM on-the-fly
+                input_data, _ = run_custom(decode_cmd.get_cmdline())
 
-            # check the process health
-            ret = output_process.poll()
-            if ret:
-                err = bytes.decode(output_process.stderr.read())
-                raise RuntimeError(f'ffmpeg aborted unexpectedly: {err}')
+                # check the process health
+                ret = output_process.poll()
+                if ret:
+                    err = bytes.decode(output_process.stderr.read())
+                    raise RuntimeError(f'ffmpeg aborted unexpectedly: {err}')
 
-            # Send the data to the output process
-            output_process.stdin.write(input_data)
-            pbar.update(1)
+                # Send the data to the output process
+                output_process.stdin.write(input_data)
+                pbar.update(1)
 
-    # Close the door!
-    output_process.stdin.close()
+        # Close the door!
+        output_process.stdin.close()
 
-    # Wait for the write to complete
-    output_process.wait()
+        # Wait for the write to complete
+        output_process.wait()
 
-    # Grab output and error
-    retcode = output_process.poll()
-    if retcode:
-        raise RuntimeError('ffmpeg') # todo: error handling
+        # Grab output and error
+        retcode = output_process.poll()
+        if retcode:
+            raise RuntimeError('ffmpeg') # todo: error handling
+
+        # move the file over the original
+        shutil.move(temp_filename, output_filename)
+    except Exception as e:
+        # Something went wrong, so delete the temporary file
+        try:
+            os.remove(temp_filename)
+        except Exception as e2:
+            # ignore errors removing the temporary file
+            eprint(f'Warning: couldn\'t remove temporary file "{temp_filename}": {e2}')
 
 
 def update_audio_file(ffmetadata_filename, album_art_filename, output_filename):
