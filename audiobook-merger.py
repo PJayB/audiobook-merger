@@ -10,10 +10,10 @@ import sys
 import tempfile
 from tqdm import tqdm
 
+# todo: autodetect largest jpg or png in root folder as artwork
+# todo: command line --metadata k=v flag
 # todo: fix Windows "file still in use" bug
 # todo: fix unhelpful "broken pipe" issue when there is an error
-# todo: a manifest generation tool that dumps a template manifest
-# todo: chapter regex option that pulls from filenames and/or track names
 # todo: iff. all inputs have chapters, use those instead
 
 def eprint(*args, **kwargs):
